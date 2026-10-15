@@ -52,6 +52,9 @@ const server = createServer(async (req, res) => {
     const path = resolve(root, '.' + (pathname === '/' ? '/index.html' : pathname));
     if (!path.startsWith(root + '/')) { res.writeHead(403).end(); return; }
     let data = await readFile(path);
+    if (path.endsWith('/js/firebase-config.js') && req.headers['x-production'] === 'true') {
+      data = 'export const firebaseConfig = { apiKey: "YOUR_FIREBASE_API_KEY" };';
+    }
     if (path.endsWith('/js/store.js') && req.headers['x-production'] !== 'true') {
       data = store.slice(0, store.indexOf('export async function connect()')) + testConnect;
     }
@@ -91,7 +94,8 @@ async function guidePick(page, name) {
   await click(page, '[data-g="pick"]'); await confirm(page);
 }
 try {
-  // Verify the actual placeholder config reaches a useful failure panel.
+  // Verify missing configuration reaches a useful failure panel.
+  // Supply a placeholder fixture without changing the saved project settings.
   const prod = await context();
   await prod.setExtraHTTPHeaders({ 'x-production': 'true' });
   const pp = await prod.newPage(); await pp.goto(origin);
