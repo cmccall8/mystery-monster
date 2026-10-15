@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mystery Monster</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Pirata+One&family=Figtree:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>🎃 Mystery Monster</h1>
+    <div class="row">
+      <span id="inviteArea" class="row hidden"><span>Room <strong id="inviteCode"></strong></span><button id="copyInvite" class="ghost sm">Copy invite link</button></span>
+      <button id="guideBtn" class="primary sm">📖 Field Guide</button>
+      <button id="soundBtn" class="ghost sm" aria-pressed="true">🔊 Sound on</button>
+      <div class="round-tag">Round <strong id="roundNum">1</strong></div>
+      <button id="joinTop" class="primary hidden">Join the game</button>
+    </div>
+  </header>
+
+  <section id="loading" class="notice"><p class="muted">Lighting the candles…</p></section>
+  <section id="unavailable" class="notice hidden"><h2>Can't connect to the game</h2><p id="connectionError" class="muted">Check your connection and Firebase setup, then reload to try again.</p></section>
+
+  <section id="roomEntry" class="stack hidden" aria-labelledby="entryHead">
+    <h2 id="entryHead">Gather your monsters</h2>
+    <form id="roomForm" class="stack">
+      <div><label for="displayName">Your display name</label><input id="displayName" type="text" maxlength="40" autocomplete="nickname" required></div>
+      <p id="inviteNote" class="muted hidden"></p>
+      <div id="roomChoices" class="stack">
+        <button id="createRoom" type="button" class="primary">Create a game</button>
+        <div><label for="roomCode">Join a game with a room code</label><div class="row"><input id="roomCode" type="text" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABC234"><button id="joinRoom" type="submit">Join a game</button></div></div>
+      </div>
+      <div id="inviteJoin" class="row hidden"><button type="submit" class="primary">Join the game</button><button id="otherRoom" type="button" class="ghost">Choose another game</button></div>
+      <p id="entryError" role="status" aria-live="polite"></p>
+    </form>
+  </section>
+
+  <div id="game" class="hidden">
+    <div class="grid">
+      <section class="stack" aria-labelledby="roundHead">
+        <h2 id="roundHead">This round</h2>
+        <div id="monsterWho" class="who"></div>
+        <div id="secretArea"></div>
+        <div id="turnArea"></div>
+        <div>
+          <div class="count"><strong id="qLeft">15</strong> questions left</div>
+          <div class="candles" id="candles" aria-hidden="true"></div>
+        </div>
+        <div id="cluesWrap" class="hidden">
+          <label>Clues so far</label>
+          <ol class="clues" id="clues"></ol>
+        </div>
+        <div class="toast" id="toast" role="status" aria-live="polite"></div>
+      </section>
+
+      <section aria-labelledby="boardHead">
+        <h2 id="boardHead">Scoreboard</h2>
+        <p class="muted" id="orderNote">Players ask questions in this order, skipping the monster.</p>
+        <ol class="board" id="board"></ol>
+        <div class="row" style="margin-top:12px">
+          <button id="joinBoard" class="primary hidden">Join the game</button>
+          <button id="leaveBtn" class="ghost hidden">Leave the game</button>
+        </div>
+        <div class="log" id="log"></div>
+      </section>
+    </div>
+
+    <details class="panel hidden" id="hostPanel">
+      <summary><h2>Host tools</h2><span class="muted">Only you can see this</span></summary>
+      <div class="hostgrid">
+        <div class="stack">
+          <div>
+            <label>Game mode</label>
+            <div class="row modeseg"><button data-mode="multi">Everyone on their own screen</button><button data-mode="host">I run it from my screen</button></div>
+            <p class="muted" id="modeNote" style="margin-top:6px"></p>
+          </div>
+          <div>
+            <label>Skip</label>
+            <p id="skipWho" class="muted" style="margin-bottom:8px"></p>
+            <div class="row"><button id="skipTurnBtn">Skip this turn</button><button id="skipBtn">Skip this round</button></div>
+            <p class="muted" style="margin-top:6px">Skipping a turn moves to the next player. Skipping a round gives no points and passes the monster role on.</p>
+          </div>
+          <div>
+            <label for="monsterSelect">Switch the monster</label>
+            <div class="add"><select id="monsterSelect"></select><button id="setMonsterBtn" class="primary">Make monster</button></div>
+            <p class="muted" style="margin-top:6px">This restarts the round with a fresh draw.</p>
+          </div>
+          <div>
+            <label for="guestName">Add a player by name</label>
+            <form class="add" id="guestForm"><input type="text" id="guestName" placeholder="Their name" maxlength="40"><button type="submit" class="primary">Add</button></form>
+            <p class="muted" style="margin-top:6px">For anyone who can't open the link. You'll handle their turns. When they're the monster, you can draw for them or let them pick their own.</p>
+          </div>
+          <div>
+            <label id="qLabel">Questions per round</label>
+            <div class="row seg" role="group" aria-labelledby="qLabel">
+              <button data-q="5">5</button><button data-q="10">10</button><button data-q="15">15</button>
+            </div>
+          </div>
+          <div class="row">
+            <button id="newGameBtn">Start a new game</button>
+          </div>
+        </div>
+        <div>
+          <label for="newMonster">Monster list <span class="muted" id="monCount" style="font-weight:400"></span></label>
+          <form class="monform" id="monForm">
+            <input type="text" id="newMonster" placeholder="Monster name" maxlength="50" aria-label="Monster name">
+            <input type="text" id="newDesc" placeholder="Short description (optional)" maxlength="160" aria-label="Short description">
+            <div><button type="submit" class="primary">Add monster</button></div>
+          </form>
+          <div class="chips" id="chips"></div>
+          <div class="row" style="margin-top:12px"><button id="restoreMon" class="ghost">Restore the default list</button></div>
+        </div>
+      </div>
+    </details>
+  </div>
+</div>
+
+<div id="guide" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="guideTitle">
+  <div class="book">
+    <div class="book-head">
+      <h2 id="guideTitle">Monster Field Guide</h2>
+      <button class="book-close" id="guideClose" aria-label="Close the field guide">✕</button>
+    </div>
+    <div class="book-banner hidden" id="guideBanner"></div>
+    <div class="book-page" id="guidePage"></div>
+  </div>
+</div>
+
+<div id="reveal" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="revealHead">
+  <div class="card">
+    <p class="card-kicker" id="revealKicker"></p>
+    <div class="card-art" id="revealArt" aria-hidden="true"></div>
+    <h2 id="revealHead"></h2>
+    <p class="card-desc" id="revealDesc"></p>
+    <p class="card-meta" id="revealMeta"></p>
+    <button class="primary" id="revealClose">On to the next round</button>
+  </div>
+</div>
+
+<div id="confirmBox" class="overlay hidden" role="alertdialog" aria-modal="true" aria-labelledby="confirmMsg">
+  <div class="card confirm">
+    <p id="confirmMsg"></p>
+    <div class="row" style="justify-content:center; margin-top:18px"><button class="ghost" id="confirmCancel">Cancel</button><button class="primary" id="confirmOk">Yes</button></div>
+  </div>
+</div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

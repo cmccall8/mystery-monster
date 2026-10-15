@@ -1,0 +1,10 @@
+{
+  "name": "mystery-monster",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/port.test.mjs",
+    "test:browser": "node tests/browser.mjs",
+    "extract-images": "node scripts/extract-images.mjs"
+  }
+}
