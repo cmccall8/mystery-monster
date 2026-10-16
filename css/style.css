@@ -238,3 +238,6 @@ button.glow.primary { color: var(--pumpkin-ink); }
 #entryError { color: #E5645C; min-height: 1.5em; }
 #roomCode { text-transform: uppercase; letter-spacing: .15em; }
 #inviteCode { color: var(--flame); letter-spacing: .12em; }
+
+.round-timer { color: var(--flame); font-size: 1.15rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.round-timer.timer-low { color: #E5645C; }

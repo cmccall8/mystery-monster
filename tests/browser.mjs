@@ -98,6 +98,7 @@ async function click(page, selector) {
     assert.equal(await page.locator('#hostPanel').isVisible(), true);
     assert.equal(await page.locator('#game').isVisible(), false);
     assert.equal(await page.locator('#guestForm').count(), 0);
+    assert.equal(await page.locator('#difficulty').inputValue(), 'normal');
     await page.locator('[data-q="10"]').click();
     assert.equal(await page.locator('[data-q="10"]').getAttribute('aria-pressed'), 'true');
     await page.locator('[data-q="15"]').click();
@@ -306,6 +307,51 @@ try {
   assert.notEqual(new URL(other.url()).searchParams.get('room'), code);
   assert.equal(Object.keys(state().players).length, 3);
   passed('typed room-code validation and separate-room isolation');
+
+  const timedCode = new URL(other.url()).searchParams.get('room');
+  const timedPath = `rooms/${timedCode}`, timedState = () => docs.get(timedPath);
+  assert.equal(timedState().difficulty, 'normal');
+  await click(other, '#roomSetupBtn');
+  for (const [mode, minutes] of [['easy', 15], ['normal', 10], ['hard', 5], ['extreme', 3], ['casual', 0]]) {
+    await other.selectOption('#difficulty', mode);
+    await wait(() => timedState().difficulty === mode);
+    await wait(async () => (await other.locator('#roundTimer').textContent()).includes(minutes ? `${minutes}:00` : 'No timer'));
+  }
+  await click(other, '#finishSetup');
+  await click(other, '[data-act=draw]'); await wait(() => timedState().drawn);
+  assert.equal(timedState().roundDeadline, null);
+  passed('Normal default, all five mode settings, and Casual draws without a timer');
+  await click(other, '#roomSetupBtn');
+  assert.equal(await other.locator('#difficulty').isDisabled(), true);
+  await click(other, '#skipBtn'); await confirm(other); await wait(() => timedState().round === 2);
+  await other.selectOption('#difficulty', 'extreme'); await wait(() => timedState().difficulty === 'extreme');
+  await click(other, '#finishSetup');
+  const watcherCtx = await context(), watcher = await watcherCtx.newPage();
+  await watcher.goto(`${origin}/?room=${timedCode}`);
+  await watcher.fill('#displayName', 'Watcher'); await click(watcher, '#inviteJoin button[type=submit]');
+  await watcher.locator('#game:not(.hidden)').waitFor();
+  const started = Date.now();
+  await click(other, '[data-act=draw]'); await wait(() => timedState().drawn);
+  assert.ok(timedState().roundDeadline >= started + 180000);
+  assert.ok(timedState().roundDeadline < Date.now() + 181000);
+  await wait(async () => (await watcher.locator('#roundTimer').textContent()).includes('Extreme'));
+  const deadline = timedState().roundDeadline;
+  await watcher.reload(); await click(watcher, '#inviteJoin button[type=submit]');
+  assert.equal(timedState().roundDeadline, deadline);
+  passed('shared Extreme deadline starts on draw and survives a player refresh');
+  // Move the shared deadline forward for a real countdown without a three-minute test wait.
+  docs.set(timedPath, { ...timedState(), roundDeadline: Date.now() + 2500 });
+  await wait(async () => (await other.locator('#roundTimer').textContent()).includes('0:02'));
+  await wait(async () => (await watcher.locator('#roundTimer').textContent()).includes('0:02'));
+  await wait(() => timedState().round === 3);
+  assert.equal(timedState().lastRound.timedOut, true);
+  assert.equal(timedState().lastRound.outcome, 'stump');
+  assert.equal(timedState().players[timedState().hostUid].score, 3);
+  assert.equal(timedState().roundDeadline, null);
+  await other.locator('#reveal:not(.hidden)').waitFor();
+  await watcher.locator('#reveal:not(.hidden)').waitFor();
+  assert.match(await watcher.locator('#revealKicker').textContent(), /Time’s up!/);
+  passed('all players see countdown and timeout reveal; monster wins exactly +3');
 
   assert.deepEqual(errors, []); assert.deepEqual(brokenImages, []);
   console.log(`${checks} browser checks passed; no uncaught errors or missing requested images.`);

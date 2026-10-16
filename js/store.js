@@ -81,6 +81,19 @@ export function makeSession(sdk, firestore, identity) {
         }]));
       },
     },
+    async finishRound(expected, patch, timedOut = false) {
+      requireRoom();
+      return runTransaction(firestore, async tx => {
+        const ref = roomRef(), snap = await tx.get(ref);
+        if (!snap.exists()) return false;
+        const state = snap.data();
+        if (state.gameId !== expected.gameId || state.round !== expected.round || state.monsterId !== expected.monsterId || state.turn !== expected.turn || (state.roundDeadline || null) !== expected.roundDeadline) return false;
+        const expired = state.drawn && state.roundDeadline && Date.now() >= state.roundDeadline;
+        if (timedOut ? !expired : patch.lastRound.outcome === 'right' && expired) return false;
+        tx.set(ref, patch, { merge: true });
+        return true;
+      });
+    },
     async createRoom(initialState, name) {
       for (let attempt = 0; attempt < 20; attempt++) {
         const candidate = randomCode();

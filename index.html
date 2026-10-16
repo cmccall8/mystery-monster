@@ -42,10 +42,21 @@
 
     <section class="panel hidden" id="hostPanel" aria-labelledby="setupHead">
       <h2 id="setupHead">Room setup</h2><p class="muted">Players join automatically using your invite link.</p>
+      <div class="stack" style="margin:16px 0">
+        <label for="difficulty">Game mode</label>
+        <select id="difficulty">
+          <option value="casual">Casual — No timer</option>
+          <option value="easy">Easy — 15 minutes</option>
+          <option value="normal" selected>Normal — 10 minutes</option>
+          <option value="hard">Hard — 5 minutes</option>
+          <option value="extreme">Extreme — 3 minutes</option>
+        </select>
+        <p class="muted">The timer starts when the monster is drawn. If time runs out, the monster wins +3 points. Change modes between rounds.</p>
+      </div>
       <div class="hostgrid">
         <div class="stack">
           <div>
-            <label>Game mode</label>
+            <label>Player screens</label>
             <div class="row modeseg"><button data-mode="multi">Everyone on their own screen</button><button data-mode="host">I run it from my screen</button></div>
             <p class="muted" id="modeNote" style="margin-top:6px"></p>
           </div>
@@ -88,6 +99,7 @@
     <div class="grid">
       <section class="stack" aria-labelledby="roundHead">
         <h2 id="roundHead">This round</h2>
+        <p id="roundTimer" class="round-timer" role="timer" aria-label="Round time remaining"></p>
         <div id="monsterWho" class="who"></div>
         <div id="secretArea"></div>
         <div id="turnArea"></div>

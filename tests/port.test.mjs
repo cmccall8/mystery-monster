@@ -129,3 +129,24 @@ test('room creation retries a collision without overwriting an existing room', a
   assert.equal(attempt, 2);
   assert.equal(f.docs.size, 1);
 });
+
+test('round completion rejects stale results, late correct guesses, and duplicate timeouts', async () => {
+  const f = fixture(), host = f.session('host');
+  const code = await host.createRoom({ gameId: 'game', round: 1, turn: 0, drawn: true, roundDeadline: Date.now() - 1000 }, 'Pumpkin');
+  const path = `rooms/${code}`;
+  const expected = { gameId: 'game', round: 1, turn: 0, monsterId: 'host', roundDeadline: f.docs.get(path).roundDeadline };
+  const patch = { round: 2, drawn: false, roundDeadline: null, players: { host: { score: 3 } }, lastRound: { outcome: 'stump', timedOut: true } };
+  assert.equal(await host.finishRound(expected, { ...patch, lastRound: { outcome: 'right' } }), false);
+  assert.equal(await host.finishRound({ ...expected, gameId: 'old' }, patch, true), false);
+  assert.equal(await host.finishRound(expected, patch, true), true);
+  assert.equal(await host.finishRound(expected, patch, true), false);
+  assert.equal(f.docs.get(path).players.host.score, 3);
+  assert.equal(f.docs.get(path).players.host.name, 'Pumpkin');
+  const state = { ...f.docs.get(path), round: 3, turn: 0, drawn: true, roundDeadline: Date.now() + 600000 };
+  f.docs.set(path, state);
+  const active = { ...expected, round: 3, roundDeadline: state.roundDeadline };
+  assert.equal(await host.finishRound(active, patch, true), false);
+  assert.equal(await host.finishRound(active, { ...patch, round: 4, lastRound: { outcome: 'right' } }), true);
+  f.docs.set(path, { ...state, roundDeadline: null });
+  assert.equal(await host.finishRound({ ...active, roundDeadline: null }, patch, true), false);
+});

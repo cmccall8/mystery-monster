@@ -34,6 +34,28 @@ let seenLast, revealOpen = false, showGallery = false;
 let turnMode = "choose", turnModeFor = null, lastTurnHtml = null, focusTurn = false;
 const resolvedGuesses = new Set();
 const DEFAULT_Q = 15;
+const DIFFICULTIES = { casual: ["Casual", 0], easy: ["Easy", 15], normal: ["Normal", 10], hard: ["Hard", 5], extreme: ["Extreme", 3] };
+const difficulty = () => S?.difficulty || "normal";
+const timerMinutes = () => DIFFICULTIES[difficulty()][1];
+const timeExpired = () => !!(S?.drawn && S.roundDeadline && Date.now() >= S.roundDeadline);
+const startTimer = () => ({ roundDeadline: timerMinutes() ? Date.now() + timerMinutes() * 60000 : null });
+let expiringRound = null;
+function updateTimer() {
+  if (!S) return;
+  const minutes = timerMinutes();
+  const remaining = S.roundDeadline ? Math.max(0, Math.ceil((S.roundDeadline - Date.now()) / 1000)) : minutes * 60;
+  $("roundTimer").textContent = !minutes ? "Casual · No timer" : `${DIFFICULTIES[difficulty()][0]} · ${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}${!S.drawn ? " · Starts when the monster is drawn" : ""}`;
+  $("roundTimer").classList.toggle("timer-low", !!minutes && !!S.drawn && remaining <= 30);
+  if (timeExpired()) {
+    const key = `${S.gameId}:${S.round}`;
+    if (expiringRound !== key) {
+      expiringRound = key;
+      endRound("stump", null, {}, undefined, null, true).finally(() => { expiringRound = null; });
+    }
+  }
+}
+setInterval(updateTimer, 250);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) updateTimer(); });
 const maxQ = () => (S && S.maxQ) || DEFAULT_Q;
 
 let db = null, user = null, me = null, isHost = false, session = null;
@@ -173,7 +195,7 @@ function enqueue(fn) {
   return chain;
 }
 const stateRef = () => db.doc("game/state");
-const freshState = (players = {}, monsterId = null) => ({ gameId: crypto.randomUUID(), round: 1, monsterId, questions: 0, turn: 0, drawn: false, used: [], log: [], lastRound: null, pending: null, clues: [], selfPick: false, maxQ: DEFAULT_Q, hostMode: false, players });
+const freshState = (players = {}, monsterId = null) => ({ gameId: crypto.randomUUID(), round: 1, monsterId, questions: 0, turn: 0, drawn: false, used: [], log: [], lastRound: null, pending: null, clues: [], selfPick: false, maxQ: DEFAULT_Q, hostMode: false, difficulty: "normal", roundDeadline: null, players });
 
 // ---------- derived ----------
 const players = () => (S && S.players) || {};
@@ -200,7 +222,7 @@ function avatarHtml(id, lg) {
 }
 
 // ---------- startup and rooms ----------
-let setupOpen = false, setupQ = DEFAULT_Q, setupHostMode = false;
+let setupOpen = false, setupQ = DEFAULT_Q, setupHostMode = false, setupDifficulty = "normal";
 let requestedRoom = new URL(location.href).searchParams.get("room") || "";
 $("displayName").value = savedPreference("mm-name") || "";
 $("roomCode").value = requestedRoom || savedPreference("mm-room") || "";
@@ -226,7 +248,7 @@ async function enterRoom(create = false) {
   const buttons = [...$("roomForm").querySelectorAll("button"), $("finishSetup"), $("cancelSetup")]; buttons.forEach(b => b.disabled = true);
   try {
     if (create) {
-      await session.createRoom({ ...freshState(), maxQ: setupQ, hostMode: setupHostMode }, name);
+      await session.createRoom({ ...freshState(), maxQ: setupQ, hostMode: setupHostMode, difficulty: setupDifficulty }, name);
       await session.db.doc("game/monsters").set({ list: monsters, descs: customDescs });
     }
     else await session.joinRoom(requestedRoom || $("roomCode").value, name);
@@ -290,6 +312,8 @@ function showUnavailable(err) {
 }
 
 function afterChange() {
+  updateTimer();
+  if (timeExpired()) { render(); return; }
   // If the round ended before the drawer's name made it into the reveal, fill it in from the drawer's device.
   const lr = S && S.lastRound;
   if (lr && !lr.name && secret && secret.gameId === S.gameId && lr.round === secret.round && lr.monsterId === secret.forId && backfilled !== `${S.gameId}:${lr.round}`) {
@@ -331,6 +355,7 @@ async function render() {
 
   const st = S || freshState();
   $("roundNum").textContent = st.round;
+  updateTimer();
   const canJoin = !!me && !joined();
   $("joinTop").classList.toggle("hidden", !canJoin);
   $("joinBoard").classList.toggle("hidden", !canJoin);
@@ -429,7 +454,7 @@ async function render() {
     const nm = lr.name, inf = nm ? info(nm) : null;
     const k = $("revealKicker");
     k.className = "card-kicker" + (lr.outcome === "stump" ? " stump" : "");
-    k.textContent = lr.outcome === "right" ? `${nameOf(lr.winnerId)} guessed it! +2` : `Nobody got it! ${nameOf(lr.monsterId)} gets +3`;
+    k.textContent = lr.outcome === "right" ? `${nameOf(lr.winnerId)} guessed it! +2` : `${lr.timedOut ? "Time’s up!" : "Nobody got it!"} ${nameOf(lr.monsterId)} gets +3`;
     const ra = $("revealArt");
     ra.classList.toggle("poster", !!(inf && inf.poster));
     ra.innerHTML = inf ? (inf.poster ? `<img src="${inf.poster}" alt="">` : artHtml(nm)) : "❔";
@@ -443,6 +468,8 @@ async function render() {
 }
 
 function renderSetup() {
+    $("difficulty").value = S ? difficulty() : setupDifficulty;
+    $("difficulty").disabled = !!S?.drawn;
     document.querySelectorAll(".seg button").forEach(b => b.setAttribute("aria-pressed", String(+b.dataset.q === (S ? maxQ() : setupQ))));
     $("skipWho").textContent = currentAsker() ? `${nameOf(currentAsker())} is up${S?.pending ? " (waiting on the monster)" : ""}` : "Nobody is up right now";
     document.querySelectorAll(".modeseg button").forEach(b => b.setAttribute("aria-pressed", String((b.dataset.mode === "host") === (S ? hostRun() : setupHostMode))));
@@ -482,7 +509,7 @@ function removePlayer(id) {
     if (S.monsterId === id) {
       const o = order(), i = o.indexOf(id), rest = o.filter(x => x !== id);
       patch.monsterId = rest.length ? o.filter(x => x !== id)[i % rest.length] : null;
-      patch.drawn = false; patch.questions = 0; patch.turn = 0; patch.pending = null; patch.clues = []; patch.selfPick = false;
+      patch.roundDeadline = null; patch.drawn = false; patch.questions = 0; patch.turn = 0; patch.pending = null; patch.clues = []; patch.selfPick = false;
     }
     await stateRef().update(patch);
   });
@@ -504,7 +531,7 @@ function draw() {
   showSecret = false;
   secret = { name, gameId, round, forId }; render();
   enqueue(() => db.doc(`data/users/${me}/secret`).set({ name, gameId, round, forId }));
-  if (!S.drawn) enqueue(() => stateRef().update({ drawn: true }));
+  if (!S.drawn) enqueue(() => stateRef().update({ drawn: true, ...startTimer() }));
 }
 
 function turnHtml(st, mId, asker, mq) {
@@ -555,7 +582,9 @@ function turnHtml(st, mId, asker, mq) {
   return `<div class="turnbox hot"><p class="turn mine">${head}</p>${body}</div>`;
 }
 
-function endRound(outcome, winnerId, extra = {}, baseLog = (S.log || []), nameOverride = null) {
+function endRound(outcome, winnerId, extra = {}, baseLog = (S.log || []), nameOverride = null, timedOut = false) {
+  if (outcome === "right" && timeExpired()) return Promise.resolve();
+  const expected = { gameId: S.gameId, round: S.round, monsterId: S.monsterId, turn: S.turn, roundDeadline: S.roundDeadline || null };
   const name = nameOverride || roundSecret() || (outcome === "right" && S.pending && S.pending.type === "guess" ? S.pending.name : null);
   const o = order(), i = o.indexOf(S.monsterId);
   const next = o.length ? o[(i + 1) % o.length] : null;
@@ -564,21 +593,21 @@ function endRound(outcome, winnerId, extra = {}, baseLog = (S.log || []), nameOv
   if (outcome === "stump" && players()[S.monsterId]) pl[S.monsterId] = { score: (players()[S.monsterId].score || 0) + 3 };
   const entry = { r: S.round, k: outcome, id: outcome === "right" ? winnerId : S.monsterId };
   const patch = {
-    round: S.round + 1, monsterId: next, questions: 0, turn: 0, drawn: false,
-    lastRound: { round: S.round, monsterId: S.monsterId, winnerId: winnerId || null, outcome, name: name || null, selfPick: !!S.selfPick },
+    round: S.round + 1, monsterId: next, questions: 0, turn: 0, drawn: false, roundDeadline: null,
+    lastRound: { round: S.round, monsterId: S.monsterId, winnerId: winnerId || null, outcome, name: name || null, selfPick: !!S.selfPick, timedOut },
     log: [entry, ...baseLog].slice(0, 40),
     pending: null, clues: [], selfPick: false,
     ...(Object.keys(pl).length ? { players: pl } : {}),
   };
   if (name) patch.used = [...(S.used || []), name];
   showSecret = false;
-  enqueue(() => stateRef().update(patch));
+  return enqueue(() => session.finishRound(expected, patch, timedOut));
 }
 
 $("secretArea").addEventListener("click", async e => {
   const b = e.target.closest("button[data-act]"); if (!b) return;
   if (b.dataset.act === "draw") draw();
-  if (b.dataset.act === "self" && isHost) { enqueue(() => stateRef().update({ drawn: true, selfPick: true })); openGuide("browse"); }
+  if (b.dataset.act === "self" && isHost) { enqueue(() => stateRef().update({ drawn: true, selfPick: true, ...startTimer() })); openGuide("browse"); }
   if (b.dataset.act === "gallery") openGuide("browse");
   if (b.dataset.act === "peek") { showSecret = !showSecret; render(); }
   if (b.dataset.act === "copy") {
@@ -602,7 +631,7 @@ let guideOpen = false, guideMode = "browse", guideView = null, lastGuideHtml = n
 function guideList() { return [...monsters].sort((a, b) => norm(a).localeCompare(norm(b))); }
 function ruledOut() { return S ? (S.clues || []).filter(c => c.ans === "wrong" && c.guess).map(c => c.guess) : []; }
 function guideCanAct(mode = guideMode) {
-  if (!S || !S.monsterId || !S.drawn || S.pending) return false;
+  if (!S || timeExpired() || !S.monsterId || !S.drawn || S.pending) return false;
   if (mode === "guess") return !!actingAsker();
   if (mode === "correct") return controls(S.monsterId) && !!currentAsker();
   return false;
@@ -688,11 +717,13 @@ $("guidePage").addEventListener("click", async e => {
 });
 
 function submitGuess(name) {
+  if (timeExpired()) { updateTimer(); return; }
   const a = actingAsker(); if (!a || S.pending || !monsters.includes(name)) return;
   enqueue(() => stateRef().update({ pending: { type: "guess", by: a, name, id: rid() } }));
 }
 let answeredKey = null;
 function answer(ans) {
+  if (timeExpired()) { updateTimer(); return; }
   if (!controls(S.monsterId)) return;
   if (S.pending && S.pending.type === "guess") return;
   if (S.questions >= maxQ()) return;
@@ -761,7 +792,7 @@ $("board").addEventListener("click", e => {
   const t = e.target.closest("button"); if (!t || !isHost) return;
   if (t.dataset.inc) adjust(t.dataset.inc, 1);
   if (t.dataset.dec) adjust(t.dataset.dec, -1);
-  if (t.dataset.mon) enqueue(() => stateRef().update({ monsterId: t.dataset.mon, drawn: false, questions: 0, turn: 0, pending: null, clues: [] }));
+  if (t.dataset.mon) enqueue(() => stateRef().update({ monsterId: t.dataset.mon, drawn: false, roundDeadline: null, questions: 0, turn: 0, pending: null, clues: [] }));
   if (t.dataset.rm) { const id = t.dataset.rm; askConfirm(`Remove ${nameOf(id)} from the game?`, "Remove").then(ok => { if (ok) removePlayer(id); }); }
 });
 
@@ -776,7 +807,7 @@ $("setMonsterBtn").onclick = async () => {
   const id = $("monsterSelect").value; if (!id || !players()[id]) return;
   if (id === S.monsterId) { toast(`${nameOf(id)} is already the monster.`); return; }
   if (S.drawn && !(await askConfirm(`Make ${nameOf(id)} the monster? This round starts over with a fresh draw.`, "Switch monster"))) return;
-  enqueue(() => stateRef().update({ monsterId: id, drawn: false, questions: 0, turn: 0, pending: null, clues: [], selfPick: false }));
+  enqueue(() => stateRef().update({ monsterId: id, drawn: false, roundDeadline: null, questions: 0, turn: 0, pending: null, clues: [], selfPick: false }));
   toast(`${nameOf(id)} is now the monster.`);
 };
 document.querySelector(".modeseg").addEventListener("click", e => {
@@ -793,7 +824,7 @@ $("skipBtn").onclick = async () => { if (S && await askConfirm("Skip this round?
 $("newGameBtn").onclick = async () => {
   if (!(await askConfirm("Start a new game? Scores reset to zero. Players stay.", "Start new game"))) return;
   const pl = {}; order().forEach(id => { pl[id] = { ...players()[id], score: 0 }; });
-  enqueue(() => stateRef().set({ ...freshState(pl, order()[0] || null), maxQ: maxQ(), hostMode: hostRun() }));
+  enqueue(() => stateRef().set({ ...freshState(pl, order()[0] || null), maxQ: maxQ(), hostMode: hostRun(), difficulty: difficulty() }));
 };
 document.querySelector(".seg").addEventListener("click", e => {
   const b = e.target.closest("button[data-q]"); if (!b || (S && !isHost)) return;
@@ -823,3 +854,11 @@ $("chips").addEventListener("click", e => {
   saveMonsters(monsters.filter((_, i) => i !== +t.dataset.mrm));
 });
 $("restoreMon").onclick = () => { saveMonsters([...DEFAULT_MONSTERS], {}); if (S) enqueue(() => stateRef().update({ used: [] })); toast("Default monster list restored."); };
+
+$("difficulty").onchange = () => {
+  const value = $("difficulty").value;
+  if (!Object.hasOwn(DIFFICULTIES, value)) return;
+  if (!S) { setupDifficulty = value; return; }
+  if (!isHost || S.drawn) { renderSetup(); return; }
+  enqueue(() => stateRef().update({ difficulty: value, roundDeadline: null }));
+};
