@@ -15,6 +15,7 @@
     <h1>🎃 Mystery Monster</h1>
     <div class="row">
       <span id="inviteArea" class="row hidden"><span>Room <strong id="inviteCode"></strong></span><button id="copyInvite" class="ghost sm">Copy invite link</button></span>
+      <button id="roomSetupBtn" class="ghost sm hidden">Room setup</button>
       <button id="guideBtn" class="primary sm">📖 Field Guide</button>
       <button id="soundBtn" class="ghost sm" aria-pressed="true">🔊 Sound on</button>
       <div class="round-tag">Round <strong id="roundNum">1</strong></div>
@@ -38,6 +39,50 @@
       <p id="entryError" role="status" aria-live="polite"></p>
     </form>
   </section>
+
+    <section class="panel hidden" id="hostPanel" aria-labelledby="setupHead">
+      <h2 id="setupHead">Room setup</h2><p class="muted">Players join automatically using your invite link.</p>
+      <div class="hostgrid">
+        <div class="stack">
+          <div>
+            <label>Game mode</label>
+            <div class="row modeseg"><button data-mode="multi">Everyone on their own screen</button><button data-mode="host">I run it from my screen</button></div>
+            <p class="muted" id="modeNote" style="margin-top:6px"></p>
+          </div>
+          <div class="liveTools hidden">
+            <label>Skip</label>
+            <p id="skipWho" class="muted" style="margin-bottom:8px"></p>
+            <div class="row"><button id="skipTurnBtn">Skip this turn</button><button id="skipBtn">Skip this round</button></div>
+            <p class="muted" style="margin-top:6px">Skipping a turn moves to the next player. Skipping a round gives no points and passes the monster role on.</p>
+          </div>
+          <div class="liveTools hidden">
+            <label for="monsterSelect">Switch the monster</label>
+            <div class="add"><select id="monsterSelect"></select><button id="setMonsterBtn" class="primary">Make monster</button></div>
+            <p class="muted" style="margin-top:6px">This restarts the round with a fresh draw.</p>
+          </div>
+          <div>
+            <label id="qLabel">Questions per round</label>
+            <div class="row seg" role="group" aria-labelledby="qLabel">
+              <button data-q="5">5</button><button data-q="10">10</button><button data-q="15">15</button>
+            </div>
+          </div>
+          <div class="row liveTools hidden">
+            <button id="newGameBtn">Start a new game</button>
+          </div>
+        </div>
+        <div>
+          <label for="newMonster">Monster list <span class="muted" id="monCount" style="font-weight:400"></span></label>
+          <form class="monform" id="monForm">
+            <input type="text" id="newMonster" placeholder="Monster name" maxlength="50" aria-label="Monster name">
+            <input type="text" id="newDesc" placeholder="Short description (optional)" maxlength="160" aria-label="Short description">
+            <div><button type="submit" class="primary">Add monster</button></div>
+          </form>
+          <div class="chips" id="chips"></div>
+          <div class="row" style="margin-top:12px"><button id="restoreMon" class="ghost">Restore the default list</button></div>
+        </div>
+      </div>
+      <div class="row" style="margin-top:18px"><button id="finishSetup" class="primary">Create room</button><button id="cancelSetup" class="ghost">Back</button></div>
+    </section>
 
   <div id="game" class="hidden">
     <div class="grid">
@@ -69,53 +114,7 @@
       </section>
     </div>
 
-    <details class="panel hidden" id="hostPanel">
-      <summary><h2>Host tools</h2><span class="muted">Only you can see this</span></summary>
-      <div class="hostgrid">
-        <div class="stack">
-          <div>
-            <label>Game mode</label>
-            <div class="row modeseg"><button data-mode="multi">Everyone on their own screen</button><button data-mode="host">I run it from my screen</button></div>
-            <p class="muted" id="modeNote" style="margin-top:6px"></p>
-          </div>
-          <div>
-            <label>Skip</label>
-            <p id="skipWho" class="muted" style="margin-bottom:8px"></p>
-            <div class="row"><button id="skipTurnBtn">Skip this turn</button><button id="skipBtn">Skip this round</button></div>
-            <p class="muted" style="margin-top:6px">Skipping a turn moves to the next player. Skipping a round gives no points and passes the monster role on.</p>
-          </div>
-          <div>
-            <label for="monsterSelect">Switch the monster</label>
-            <div class="add"><select id="monsterSelect"></select><button id="setMonsterBtn" class="primary">Make monster</button></div>
-            <p class="muted" style="margin-top:6px">This restarts the round with a fresh draw.</p>
-          </div>
-          <div>
-            <label for="guestName">Add a player by name</label>
-            <form class="add" id="guestForm"><input type="text" id="guestName" placeholder="Their name" maxlength="40"><button type="submit" class="primary">Add</button></form>
-            <p class="muted" style="margin-top:6px">For anyone who can't open the link. You'll handle their turns. When they're the monster, you can draw for them or let them pick their own.</p>
-          </div>
-          <div>
-            <label id="qLabel">Questions per round</label>
-            <div class="row seg" role="group" aria-labelledby="qLabel">
-              <button data-q="5">5</button><button data-q="10">10</button><button data-q="15">15</button>
-            </div>
-          </div>
-          <div class="row">
-            <button id="newGameBtn">Start a new game</button>
-          </div>
-        </div>
-        <div>
-          <label for="newMonster">Monster list <span class="muted" id="monCount" style="font-weight:400"></span></label>
-          <form class="monform" id="monForm">
-            <input type="text" id="newMonster" placeholder="Monster name" maxlength="50" aria-label="Monster name">
-            <input type="text" id="newDesc" placeholder="Short description (optional)" maxlength="160" aria-label="Short description">
-            <div><button type="submit" class="primary">Add monster</button></div>
-          </form>
-          <div class="chips" id="chips"></div>
-          <div class="row" style="margin-top:12px"><button id="restoreMon" class="ghost">Restore the default list</button></div>
-        </div>
-      </div>
-    </details>
+
   </div>
 </div>
 

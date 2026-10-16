@@ -200,6 +200,7 @@ function avatarHtml(id, lg) {
 }
 
 // ---------- startup and rooms ----------
+let setupOpen = false, setupQ = DEFAULT_Q, setupHostMode = false;
 let requestedRoom = new URL(location.href).searchParams.get("room") || "";
 $("displayName").value = savedPreference("mm-name") || "";
 $("roomCode").value = requestedRoom || savedPreference("mm-room") || "";
@@ -222,13 +223,18 @@ async function enterRoom(create = false) {
   const name = $("displayName").value.trim();
   if (!name) { $("entryError").textContent = "Enter your display name."; return; }
   $("entryError").textContent = "";
-  const buttons = [...$("roomForm").querySelectorAll("button")]; buttons.forEach(b => b.disabled = true);
+  const buttons = [...$("roomForm").querySelectorAll("button"), $("finishSetup"), $("cancelSetup")]; buttons.forEach(b => b.disabled = true);
   try {
-    if (create) await session.createRoom(freshState(), name);
+    if (create) {
+      await session.createRoom({ ...freshState(), maxQ: setupQ, hostMode: setupHostMode }, name);
+      await session.db.doc("game/monsters").set({ list: monsters, descs: customDescs });
+    }
     else await session.joinRoom(requestedRoom || $("roomCode").value, name);
     [db, user] = [session.db, session.user];
     const v = await user.me(); me = v.id; isHost = v.isOwner;
     const url = new URL(location.href); url.searchParams.set("room", session.code); history.replaceState(null, "", url);
+    setupOpen = false;
+    $("hostPanel").classList.add("hidden");
     $("roomEntry").classList.add("hidden");
     $("inviteCode").textContent = session.code;
     $("inviteArea").classList.toggle("hidden", !isHost);
@@ -249,7 +255,24 @@ async function enterRoom(create = false) {
   finally { buttons.forEach(b => b.disabled = false); }
 }
 $("roomForm").onsubmit = e => { e.preventDefault(); enterRoom(); };
-$("createRoom").onclick = () => enterRoom(true);
+function showSetup() {
+  setupOpen = true;
+  $("hostPanel").classList.remove("hidden");
+  $("roomChoices").classList.add("hidden");
+  $("game").classList.add("hidden");
+  $("finishSetup").textContent = S ? "Back to game" : "Create room";
+  document.querySelectorAll(".liveTools").forEach(el => el.classList.toggle("hidden", !S));
+  renderSetup();
+}
+function closeSetup() {
+  setupOpen = false;
+  $("hostPanel").classList.add("hidden");
+  if (S) render(); else showEntry();
+}
+$("createRoom").onclick = () => { if ($("roomForm").reportValidity()) showSetup(); };
+$("roomSetupBtn").onclick = showSetup;
+$("finishSetup").onclick = () => S ? closeSetup() : enterRoom(true);
+$("cancelSetup").onclick = closeSetup;
 $("copyInvite").onclick = async () => {
   try { await navigator.clipboard.writeText(location.href); toast("Invite link copied. Paste it into the Zoom chat."); }
   catch { toast(`Copy the address from your browser to invite players. Room: ${session.code}`); }
@@ -304,7 +327,7 @@ async function render() {
   }
   if (seq !== renderSeq) return;
   $("loading").classList.add("hidden");
-  $("game").classList.remove("hidden");
+  $("game").classList.toggle("hidden", setupOpen);
 
   const st = S || freshState();
   $("roundNum").textContent = st.round;
@@ -312,7 +335,8 @@ async function render() {
   $("joinTop").classList.toggle("hidden", !canJoin);
   $("joinBoard").classList.toggle("hidden", !canJoin);
   $("leaveBtn").classList.toggle("hidden", !joined());
-  $("hostPanel").classList.toggle("hidden", !isHost);
+  $("roomSetupBtn").classList.toggle("hidden", !isHost);
+  $("hostPanel").classList.toggle("hidden", !isHost || !setupOpen);
 
   const lr = st.lastRound;
 
@@ -320,7 +344,7 @@ async function render() {
   const mId = st.monsterId && players()[st.monsterId] ? st.monsterId : null;
   $("monsterWho").innerHTML = mId
     ? `${avatarHtml(mId, true)}<div class="big"><strong>${esc(nameOf(mId))}</strong>${mId === me ? " (you)" : ""} is the monster</div>`
-    : `<p class="muted">${order().length ? "No monster yet. The host can pick one in Host tools." : "Waiting for players to join."}</p>`;
+    : `<p class="muted">${order().length ? "No monster yet. The host can pick one in Room setup." : "Waiting for players to join."}</p>`;
 
   const sa = $("secretArea");
   if (mId && iDraw()) {
@@ -415,27 +439,28 @@ async function render() {
     if (rv.classList.contains("hidden")) { rv.classList.remove("hidden"); $("revealClose").focus(); }
   } else rv.classList.add("hidden");
 
-  // monster list (host)
-  if (isHost) {
-    document.querySelectorAll(".seg button").forEach(b => b.setAttribute("aria-pressed", String(+b.dataset.q === mq)));
-    $("skipWho").textContent = asker ? `${nameOf(asker)} is up${st.pending ? " (waiting on the monster)" : ""}` : "Nobody is up right now";
-    document.querySelectorAll(".modeseg button").forEach(b => b.setAttribute("aria-pressed", String((b.dataset.mode === "host") === hostRun())));
-    $("modeNote").textContent = hostRun()
-      ? "You work every button from your screen. Players ask, answer and guess out loud on Zoom. Add anyone who isn't on the scoreboard below."
+  if (isHost) renderSetup();
+}
+
+function renderSetup() {
+    document.querySelectorAll(".seg button").forEach(b => b.setAttribute("aria-pressed", String(+b.dataset.q === (S ? maxQ() : setupQ))));
+    $("skipWho").textContent = currentAsker() ? `${nameOf(currentAsker())} is up${S?.pending ? " (waiting on the monster)" : ""}` : "Nobody is up right now";
+    document.querySelectorAll(".modeseg button").forEach(b => b.setAttribute("aria-pressed", String((b.dataset.mode === "host") === (S ? hostRun() : setupHostMode))));
+    $("modeNote").textContent = (S ? hostRun() : setupHostMode)
+      ? "You work every button from your screen. Players ask, answer and guess out loud on Zoom. Players join using the invite link."
       : "Players join from the link and use their own buttons. Their screens show their turn and keep their monster private.";
-    $("skipTurnBtn").disabled = !asker;
+    $("skipTurnBtn").disabled = !currentAsker();
     const sel = $("monsterSelect"), keep = sel.value;
-    const opts = order().map(id => `<option value="${esc(id)}">${esc(nameOf(id))}${id === mId ? " (monster now)" : ""}</option>`).join("");
+    const opts = order().map(id => `<option value="${esc(id)}">${esc(nameOf(id))}${id === S?.monsterId ? " (monster now)" : ""}</option>`).join("");
     if (sel.dataset.opts !== opts) {
       sel.innerHTML = opts; sel.dataset.opts = opts;
       if (keep && order().includes(keep)) sel.value = keep;
-      else { const firstOther = order().find(id => id !== mId); if (firstOther) sel.value = firstOther; }
+      else { const firstOther = order().find(id => id !== S?.monsterId); if (firstOther) sel.value = firstOther; }
     }
     $("setMonsterBtn").disabled = !order().length;
-    const used = st.used || [];
+    const used = S?.used || [];
     $("monCount").textContent = `(${monsters.length}, ${monsters.filter(m => used.includes(m)).length} used)`;
     $("chips").innerHTML = monsters.map((m, i) => `<span class="chip ${used.includes(m) ? "used" : ""}">${esc(m)}<button data-mrm="${i}" aria-label="Remove ${esc(m)}">✕</button></span>`).join("");
-  }
 }
 
 // ---------- actions ----------
@@ -755,25 +780,15 @@ $("setMonsterBtn").onclick = async () => {
   toast(`${nameOf(id)} is now the monster.`);
 };
 document.querySelector(".modeseg").addEventListener("click", e => {
-  const b = e.target.closest("button[data-mode]"); if (!b || !isHost || !S) return;
+  const b = e.target.closest("button[data-mode]"); if (!b || (S && !isHost)) return;
   const on = b.dataset.mode === "host";
+  if (!S) { setupHostMode = on; renderSetup(); return; }
   if (on === hostRun()) return;
   enqueue(() => stateRef().update({ hostMode: on }));
   toast(on ? "You're now running every turn from your screen." : "Players now use their own screens.");
 });
 
 // host tools
-$("guestForm").addEventListener("submit", e => {
-  e.preventDefault();
-  const name = $("guestName").value.trim(); if (!name) return;
-  const id = "g-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-  enqueue(async () => {
-    const entry = { joinedAt: Date.now(), score: 0, guestName: name };
-    if (!S) await stateRef().set(freshState({ [id]: entry }, id));
-    else await stateRef().update({ players: { [id]: entry }, ...(S.monsterId && players()[S.monsterId] ? {} : { monsterId: id }) });
-  });
-  $("guestName").value = "";
-});
 $("skipBtn").onclick = async () => { if (S && await askConfirm("Skip this round? Nobody gets points.", "Skip round")) endRound("skip"); };
 $("newGameBtn").onclick = async () => {
   if (!(await askConfirm("Start a new game? Scores reset to zero. Players stay.", "Start new game"))) return;
@@ -781,12 +796,16 @@ $("newGameBtn").onclick = async () => {
   enqueue(() => stateRef().set({ ...freshState(pl, order()[0] || null), maxQ: maxQ(), hostMode: hostRun() }));
 };
 document.querySelector(".seg").addEventListener("click", e => {
-  const b = e.target.closest("button[data-q]"); if (!b || !S) return;
+  const b = e.target.closest("button[data-q]"); if (!b || (S && !isHost)) return;
   const n = +b.dataset.q;
+  if (!S) { setupQ = n; renderSetup(); return; }
   enqueue(() => stateRef().update({ maxQ: n, questions: Math.min(S.questions, n) }));
   toast(`Each round now has ${n} questions.`);
 });
-const saveMonsters = (list, descs = customDescs) => enqueue(() => db.doc("game/monsters").set({ list, descs }));
+const saveMonsters = (list, descs = customDescs) => {
+  if (!S) { monsters = list; customDescs = descs; renderSetup(); return; }
+  if (isHost) return enqueue(() => db.doc("game/monsters").set({ list, descs }));
+};
 function closeReveal() { revealOpen = false; render(); }
 $("revealClose").onclick = closeReveal;
 $("reveal").addEventListener("click", e => { if (e.target.id === "reveal") closeReveal(); });
