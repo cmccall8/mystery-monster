@@ -77,7 +77,27 @@ export const MONSTER_PICS = {
   "Zombie": "images/portraits/zombie.jpg",
   "Werewolf": "images/portraits/werewolf.jpg",
   "The Mummy": "images/portraits/the-mummy.jpg",
-  "Dracula": "images/portraits/dracula.jpg"
+  "Dracula": "images/portraits/dracula.jpg",
+  "Baba Yaga": "images/portraits/baba-yaga.jpg",
+  "Demon": "images/portraits/demon.jpg",
+  "Doppelgänger": "images/portraits/doppelganger.jpg",
+  "Giant spider": "images/portraits/giant-spider.jpg",
+  "Godzilla": "images/portraits/godzilla.jpg",
+  "Golem": "images/portraits/golem.jpg",
+  "Harpy": "images/portraits/harpy.jpg",
+  "Hellhound": "images/portraits/hellhound.jpg",
+  "La Llorona": "images/portraits/la-llorona.jpg",
+  "Lich": "images/portraits/lich.jpg",
+  "Oni": "images/portraits/oni.jpg",
+  "Stingy Jack": "images/portraits/stingy-jack.jpg",
+  "Tengu": "images/portraits/tengu.jpg",
+  "The boogeyman": "images/portraits/the-boogeyman.jpg",
+  "The Dullahan": "images/portraits/the-dullahan.jpg",
+  "The Jersey Devil": "images/portraits/the-jersey-devil.jpg",
+  "Will-o'-the-wisp": "images/portraits/will-o-the-wisp.jpg",
+  "Wraith": "images/portraits/wraith.jpg",
+  "Changeling": "images/portraits/changeling.jpg",
+  "Kelpie": "images/portraits/kelpie.jpg"
 };
 
 export const MONSTER_POSTERS = {
@@ -103,12 +123,32 @@ export const MONSTER_POSTERS = {
   "Bigfoot": "images/posters/bigfoot.jpg",
   "The Headless Horseman": "images/posters/the-headless-horseman.jpg",
   "Witch": "images/posters/witch.jpg",
-  "Dracula": "images/posters/dracula.jpg",
+  "Dracula": "images/posters/dracula-full.jpg",
   "Frankenstein's monster": "images/posters/frankensteins-monster.jpg",
   "The Mummy": "images/posters/the-mummy.jpg",
   "Werewolf": "images/posters/werewolf.jpg",
   "Zombie": "images/posters/zombie.jpg",
-  "Ghost": "images/posters/ghost.jpg"
+  "Ghost": "images/posters/ghost.jpg",
+  "Baba Yaga": "images/posters/baba-yaga.jpg",
+  "Demon": "images/posters/demon.jpg",
+  "Doppelgänger": "images/posters/changeling.jpg",
+  "Giant spider": "images/posters/giant-spider.jpg",
+  "Godzilla": "images/posters/godzilla.jpg",
+  "Golem": "images/posters/golem.jpg",
+  "Harpy": "images/posters/harpy.jpg",
+  "Hellhound": "images/posters/hellhound.jpg",
+  "La Llorona": "images/posters/la-llorona.jpg",
+  "Lich": "images/posters/lich.jpg",
+  "Kelpie": "images/posters/kelpie.jpg",
+  "Changeling": "images/posters/doppelganger.jpg",
+  "Oni": "images/posters/oni.jpg",
+  "Stingy Jack": "images/posters/stingy-jack.jpg",
+  "Tengu": "images/posters/tengu.jpg",
+  "The boogeyman": "images/posters/the-boogeyman.jpg",
+  "The Dullahan": "images/posters/the-dullahan.jpg",
+  "The Jersey Devil": "images/posters/the-jersey-devil.jpg",
+  "Will-o'-the-wisp": "images/posters/will-o-the-wisp.jpg",
+  "Wraith": "images/posters/wraith.jpg"
 };
 
 export const MONSTER_STATS = {
