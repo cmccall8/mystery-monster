@@ -50,7 +50,7 @@ The initial cloud build could not run this suite because the network proxy denie
 
 Configure a separate test project using the main README, publish the rules, and serve the actual site without the browser test harness. Use two browser profiles (not merely two tabs, which share the same identity).
 
-1. Create a room and join its invite on the second profile. Verify both scoreboards update, and only the creator sees Host tools.
+1. Create a room and join its invite on the second profile. Verify both scoreboards update, and only the creator can reopen Room setup.
 2. Draw privately, answer Yes and No, make a wrong Field Guide guess and a correct guess. Verify −1 and +2, extinguished candles, crossed-out entries, and the reveal on both screens. Listen for the blow-out and organ sounds.
 3. Reach the candle limit and Pass or guess wrong. Verify +3 to the monster and the thunder sting. Keep the monster's device connected so it can check guesses and backfill the reveal.
 4. Refresh both profiles, enter the room again, and verify identity, host role and scores persist. Verify sound preference persists.

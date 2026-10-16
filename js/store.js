@@ -1,3 +1,4 @@
+import { completeRound, roundPlan, gameResultFor } from './rounds.js';
 import { firebaseConfig } from './firebase-config.js';
 
 const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -81,6 +82,31 @@ export function makeSession(sdk, firestore, identity) {
         }]));
       },
     },
+    async endGame(gameId) {
+      requireRoom();
+      return runTransaction(firestore, async tx => {
+        const ref = roomRef(), snap = await tx.get(ref);
+        if (!snap.exists()) return false;
+        const state = snap.data();
+        if (state.hostUid !== uid || state.gameId !== gameId || state.gameResult) return false;
+        tx.set(ref, { gameResult: { ...gameResultFor(state), endedEarly: true },
+          drawn: false, roundDeadline: null, monsterId: null, pending: null }, { merge: true });
+        return true;
+      });
+    },
+    async finishRound(expected, patch, timedOut = false) {
+      requireRoom();
+      return runTransaction(firestore, async tx => {
+        const ref = roomRef(), snap = await tx.get(ref);
+        if (!snap.exists()) return false;
+        const state = snap.data();
+        if (state.gameResult || state.gameId !== expected.gameId || state.round !== expected.round || state.monsterId !== expected.monsterId || state.turn !== expected.turn || (state.roundDeadline || null) !== expected.roundDeadline) return false;
+        const expired = state.drawn && state.roundDeadline && Date.now() >= state.roundDeadline;
+        if (timedOut ? !expired : patch.lastRound.outcome === 'right' && expired) return false;
+        tx.set(ref, completeRound(state, patch), { merge: true });
+        return true;
+      });
+    },
     async createRoom(initialState, name) {
       for (let attempt = 0; attempt < 20; attempt++) {
         const candidate = randomCode();
@@ -110,7 +136,10 @@ export function makeSession(sdk, firestore, identity) {
           ? { ...data.players[uid], name }
           : { name, joinedAt: Date.now(), score: 0 };
         const patch = { players: { [uid]: entry } };
-        if (!data.monsterId || !data.players?.[data.monsterId]) patch.monsterId = uid;
+        if (!data.gameResult) {
+          if (!data.monsterId || !data.players?.[data.monsterId]) patch.monsterId = uid;
+          patch.totalRounds = roundPlan({ ...data, ...patch, players: { ...data.players, [uid]: entry } }).total;
+        }
         tx.set(ref, patch, { merge: true });
         return { ...data, ...patch, players: { ...data.players, [uid]: entry } };
       });

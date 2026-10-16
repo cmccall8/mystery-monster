@@ -1,4 +1,5 @@
 import { MONSTER_INFO, MONSTER_PICS, MONSTER_POSTERS, MONSTER_STATS, TRAIT_LABELS, TRAIT_WORDS, ALIASES } from "./monsters.js";
+import { DEFAULT_ROUNDS, roundPlan } from "./rounds.js";
 import { connect, savedPreference } from "./store.js";
 
 
@@ -34,6 +35,29 @@ let seenLast, revealOpen = false, showGallery = false;
 let turnMode = "choose", turnModeFor = null, lastTurnHtml = null, focusTurn = false;
 const resolvedGuesses = new Set();
 const DEFAULT_Q = 15;
+const DIFFICULTIES = { casual: ["Casual", 0], easy: ["Easy", 15], normal: ["Normal", 10], hard: ["Hard", 5], extreme: ["Extreme", 3] };
+const difficulty = () => S?.difficulty || "normal";
+const timerMinutes = () => DIFFICULTIES[difficulty()][1];
+const timeExpired = () => !!(S?.drawn && S.roundDeadline && Date.now() >= S.roundDeadline);
+const startTimer = () => ({ roundDeadline: timerMinutes() ? Date.now() + timerMinutes() * 60000 : null });
+let expiringRound = null;
+function updateTimer() {
+  if (!S) return;
+  if (S.gameResult) { $("roundTimer").textContent = "Game over"; return; }
+  const minutes = timerMinutes();
+  const remaining = S.roundDeadline ? Math.max(0, Math.ceil((S.roundDeadline - Date.now()) / 1000)) : minutes * 60;
+  $("roundTimer").textContent = !minutes ? "Casual · No timer" : `${DIFFICULTIES[difficulty()][0]} · ${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}${!S.drawn ? " · Starts when the monster is drawn" : ""}`;
+  $("roundTimer").classList.toggle("timer-low", !!minutes && !!S.drawn && remaining <= 30);
+  if (timeExpired()) {
+    const key = `${S.gameId}:${S.round}`;
+    if (expiringRound !== key) {
+      expiringRound = key;
+      endRound("stump", null, {}, undefined, null, true).finally(() => { expiringRound = null; });
+    }
+  }
+}
+setInterval(updateTimer, 250);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) updateTimer(); });
 const maxQ = () => (S && S.maxQ) || DEFAULT_Q;
 
 let db = null, user = null, me = null, isHost = false, session = null;
@@ -173,19 +197,19 @@ function enqueue(fn) {
   return chain;
 }
 const stateRef = () => db.doc("game/state");
-const freshState = (players = {}, monsterId = null) => ({ gameId: crypto.randomUUID(), round: 1, monsterId, questions: 0, turn: 0, drawn: false, used: [], log: [], lastRound: null, pending: null, clues: [], selfPick: false, maxQ: DEFAULT_Q, hostMode: false, players });
+const freshState = (players = {}, monsterId = null) => ({ gameId: crypto.randomUUID(), round: 1, monsterId, questions: 0, turn: 0, drawn: false, used: [], log: [], lastRound: null, pending: null, clues: [], selfPick: false, maxQ: DEFAULT_Q, hostMode: false, difficulty: "normal", roundDeadline: null, totalRounds: DEFAULT_ROUNDS, monsterTurns: [], gameResult: null, players });
 
 // ---------- derived ----------
 const players = () => (S && S.players) || {};
 const order = () => Object.entries(players()).filter(([, p]) => p).sort((a, b) => a[1].joinedAt - b[1].joinedAt).map(([id]) => id);
 const isGuest = id => typeof id === "string" && id.startsWith("g-");
 const askers = () => order().filter(id => id !== S.monsterId);
-function currentAsker() { const a = askers(); return a.length ? a[(S.round + S.turn) % a.length] : null; }
+function currentAsker() { if (S?.gameResult) return null; const a = askers(); return a.length ? a[(S.round + S.turn) % a.length] : null; }
 const iAmMonster = () => !!(S && me && S.monsterId === me);
 const hostRun = () => !!(S && S.hostMode);
 // Who works the buttons for a player: in host-run mode the host does everything; otherwise each player does, and the host covers added players.
 function controls(id) { if (hostRun()) return isHost; return id === me || (isHost && isGuest(id)); }
-const iDraw = () => !!(S && S.monsterId && controls(S.monsterId));
+const iDraw = () => !!(S && !S.gameResult && S.monsterId && controls(S.monsterId));
 const canRun = () => !!(S && S.monsterId && players()[S.monsterId] && (isHost || iAmMonster()));
 const joined = () => !!(me && players()[me]);
 function roundSecret() { return secret && S && secret.gameId === S.gameId && secret.round === S.round && secret.forId === S.monsterId ? secret.name : null; }
@@ -200,6 +224,7 @@ function avatarHtml(id, lg) {
 }
 
 // ---------- startup and rooms ----------
+let setupOpen = false, setupQ = DEFAULT_Q, setupHostMode = false, setupDifficulty = "normal", setupRounds = DEFAULT_ROUNDS;
 let requestedRoom = new URL(location.href).searchParams.get("room") || "";
 $("displayName").value = savedPreference("mm-name") || "";
 $("roomCode").value = requestedRoom || savedPreference("mm-room") || "";
@@ -222,13 +247,18 @@ async function enterRoom(create = false) {
   const name = $("displayName").value.trim();
   if (!name) { $("entryError").textContent = "Enter your display name."; return; }
   $("entryError").textContent = "";
-  const buttons = [...$("roomForm").querySelectorAll("button")]; buttons.forEach(b => b.disabled = true);
+  const buttons = [...$("roomForm").querySelectorAll("button"), $("finishSetup"), $("cancelSetup")]; buttons.forEach(b => b.disabled = true);
   try {
-    if (create) await session.createRoom(freshState(), name);
+    if (create) {
+      await session.createRoom({ ...freshState(), maxQ: setupQ, hostMode: setupHostMode, difficulty: setupDifficulty, totalRounds: setupRounds }, name);
+      await session.db.doc("game/monsters").set({ list: monsters, descs: customDescs });
+    }
     else await session.joinRoom(requestedRoom || $("roomCode").value, name);
     [db, user] = [session.db, session.user];
     const v = await user.me(); me = v.id; isHost = v.isOwner;
     const url = new URL(location.href); url.searchParams.set("room", session.code); history.replaceState(null, "", url);
+    setupOpen = false;
+    $("hostPanel").classList.add("hidden");
     $("roomEntry").classList.add("hidden");
     $("inviteCode").textContent = session.code;
     $("inviteArea").classList.toggle("hidden", !isHost);
@@ -249,7 +279,24 @@ async function enterRoom(create = false) {
   finally { buttons.forEach(b => b.disabled = false); }
 }
 $("roomForm").onsubmit = e => { e.preventDefault(); enterRoom(); };
-$("createRoom").onclick = () => enterRoom(true);
+function showSetup() {
+  setupOpen = true;
+  $("hostPanel").classList.remove("hidden");
+  $("roomChoices").classList.add("hidden");
+  $("game").classList.add("hidden");
+  $("finishSetup").textContent = S ? "Back to game" : "Create room";
+  document.querySelectorAll(".liveTools").forEach(el => el.classList.toggle("hidden", !S));
+  renderSetup();
+}
+function closeSetup() {
+  setupOpen = false;
+  $("hostPanel").classList.add("hidden");
+  if (S) render(); else showEntry();
+}
+$("createRoom").onclick = () => { if ($("roomForm").reportValidity()) showSetup(); };
+$("roomSetupBtn").onclick = showSetup;
+$("finishSetup").onclick = () => S ? closeSetup() : enterRoom(true);
+$("cancelSetup").onclick = closeSetup;
 $("copyInvite").onclick = async () => {
   try { await navigator.clipboard.writeText(location.href); toast("Invite link copied. Paste it into the Zoom chat."); }
   catch { toast(`Copy the address from your browser to invite players. Room: ${session.code}`); }
@@ -267,6 +314,8 @@ function showUnavailable(err) {
 }
 
 function afterChange() {
+  updateTimer();
+  if (timeExpired()) { render(); return; }
   // If the round ended before the drawer's name made it into the reveal, fill it in from the drawer's device.
   const lr = S && S.lastRound;
   if (lr && !lr.name && secret && secret.gameId === S.gameId && lr.round === secret.round && lr.monsterId === secret.forId && backfilled !== `${S.gameId}:${lr.round}`) {
@@ -304,15 +353,20 @@ async function render() {
   }
   if (seq !== renderSeq) return;
   $("loading").classList.add("hidden");
-  $("game").classList.remove("hidden");
+  $("game").classList.toggle("hidden", setupOpen);
 
   const st = S || freshState();
-  $("roundNum").textContent = st.round;
+  $("roundNum").textContent = `${st.round} of ${roundPlan(st).total}`;
+  updateTimer();
   const canJoin = !!me && !joined();
   $("joinTop").classList.toggle("hidden", !canJoin);
   $("joinBoard").classList.toggle("hidden", !canJoin);
   $("leaveBtn").classList.toggle("hidden", !joined());
-  $("hostPanel").classList.toggle("hidden", !isHost);
+  $("roomSetupBtn").classList.toggle("hidden", !isHost);
+  $("gameHostControls").classList.toggle("hidden", !isHost);
+  $("gameSkipTurn").disabled = !!S?.gameResult || !currentAsker();
+  $("gameEnd").disabled = !!S?.gameResult;
+  $("hostPanel").classList.toggle("hidden", !isHost || !setupOpen);
 
   const lr = st.lastRound;
 
@@ -320,7 +374,7 @@ async function render() {
   const mId = st.monsterId && players()[st.monsterId] ? st.monsterId : null;
   $("monsterWho").innerHTML = mId
     ? `${avatarHtml(mId, true)}<div class="big"><strong>${esc(nameOf(mId))}</strong>${mId === me ? " (you)" : ""} is the monster</div>`
-    : `<p class="muted">${order().length ? "No monster yet. The host can pick one in Host tools." : "Waiting for players to join."}</p>`;
+    : `<p class="muted">${order().length ? "No monster yet. The host can pick one in Room setup." : "Waiting for players to join."}</p>`;
 
   const sa = $("secretArea");
   if (mId && iDraw()) {
@@ -401,11 +455,11 @@ async function render() {
 
   // success card
   const rv = $("reveal");
-  if (revealOpen && lr) {
+  if (revealOpen && lr && !S.gameResult) {
     const nm = lr.name, inf = nm ? info(nm) : null;
     const k = $("revealKicker");
     k.className = "card-kicker" + (lr.outcome === "stump" ? " stump" : "");
-    k.textContent = lr.outcome === "right" ? `${nameOf(lr.winnerId)} guessed it! +2` : `Nobody got it! ${nameOf(lr.monsterId)} gets +3`;
+    k.textContent = lr.outcome === "right" ? `${nameOf(lr.winnerId)} guessed it! +2` : `${lr.timedOut ? "Time’s up!" : "Nobody got it!"} ${nameOf(lr.monsterId)} gets +3`;
     const ra = $("revealArt");
     ra.classList.toggle("poster", !!(inf && inf.poster));
     ra.innerHTML = inf ? (inf.poster ? `<img src="${inf.poster}" alt="">` : artHtml(nm)) : "❔";
@@ -415,27 +469,37 @@ async function render() {
     if (rv.classList.contains("hidden")) { rv.classList.remove("hidden"); $("revealClose").focus(); }
   } else rv.classList.add("hidden");
 
-  // monster list (host)
-  if (isHost) {
-    document.querySelectorAll(".seg button").forEach(b => b.setAttribute("aria-pressed", String(+b.dataset.q === mq)));
-    $("skipWho").textContent = asker ? `${nameOf(asker)} is up${st.pending ? " (waiting on the monster)" : ""}` : "Nobody is up right now";
-    document.querySelectorAll(".modeseg button").forEach(b => b.setAttribute("aria-pressed", String((b.dataset.mode === "host") === hostRun())));
-    $("modeNote").textContent = hostRun()
-      ? "You work every button from your screen. Players ask, answer and guess out loud on Zoom. Add anyone who isn't on the scoreboard below."
+  renderGameResult();
+  if (isHost) renderSetup();
+}
+
+function renderSetup() {
+    const rounds = $("totalRounds");
+    rounds.min = S ? roundPlan(S).minimum : 1;
+    if (document.activeElement !== rounds) rounds.value = S ? roundPlan(S).total : setupRounds;
+    rounds.disabled = !!S?.gameResult;
+    $("roundCountNote").textContent = S ? `At least ${roundPlan(S).minimum} rounds so every player gets a turn as the monster. New players can extend the game.` : "At least one round per player. The game adds rounds if needed so everyone gets a turn as the monster.";
+    $("skipBtn").disabled = !!S?.gameResult;
+    $("difficulty").value = S ? difficulty() : setupDifficulty;
+    $("difficulty").disabled = !!S?.drawn;
+    document.querySelectorAll(".seg button").forEach(b => b.setAttribute("aria-pressed", String(+b.dataset.q === (S ? maxQ() : setupQ))));
+    $("skipWho").textContent = currentAsker() ? `${nameOf(currentAsker())} is up${S?.pending ? " (waiting on the monster)" : ""}` : "Nobody is up right now";
+    document.querySelectorAll(".modeseg button").forEach(b => b.setAttribute("aria-pressed", String((b.dataset.mode === "host") === (S ? hostRun() : setupHostMode))));
+    $("modeNote").textContent = (S ? hostRun() : setupHostMode)
+      ? "You work every button from your screen. Players ask, answer and guess out loud on Zoom. Players join using the invite link."
       : "Players join from the link and use their own buttons. Their screens show their turn and keep their monster private.";
-    $("skipTurnBtn").disabled = !asker;
+    $("skipTurnBtn").disabled = !currentAsker();
     const sel = $("monsterSelect"), keep = sel.value;
-    const opts = order().map(id => `<option value="${esc(id)}">${esc(nameOf(id))}${id === mId ? " (monster now)" : ""}</option>`).join("");
+    const opts = order().map(id => `<option value="${esc(id)}">${esc(nameOf(id))}${id === S?.monsterId ? " (monster now)" : ""}</option>`).join("");
     if (sel.dataset.opts !== opts) {
       sel.innerHTML = opts; sel.dataset.opts = opts;
       if (keep && order().includes(keep)) sel.value = keep;
-      else { const firstOther = order().find(id => id !== mId); if (firstOther) sel.value = firstOther; }
+      else { const firstOther = order().find(id => id !== S?.monsterId); if (firstOther) sel.value = firstOther; }
     }
-    $("setMonsterBtn").disabled = !order().length;
-    const used = st.used || [];
+    $("setMonsterBtn").disabled = !!S?.gameResult || !order().length;
+    const used = S?.used || [];
     $("monCount").textContent = `(${monsters.length}, ${monsters.filter(m => used.includes(m)).length} used)`;
     $("chips").innerHTML = monsters.map((m, i) => `<span class="chip ${used.includes(m) ? "used" : ""}">${esc(m)}<button data-mrm="${i}" aria-label="Remove ${esc(m)}">✕</button></span>`).join("");
-  }
 }
 
 // ---------- actions ----------
@@ -457,7 +521,7 @@ function removePlayer(id) {
     if (S.monsterId === id) {
       const o = order(), i = o.indexOf(id), rest = o.filter(x => x !== id);
       patch.monsterId = rest.length ? o.filter(x => x !== id)[i % rest.length] : null;
-      patch.drawn = false; patch.questions = 0; patch.turn = 0; patch.pending = null; patch.clues = []; patch.selfPick = false;
+      patch.roundDeadline = null; patch.drawn = false; patch.questions = 0; patch.turn = 0; patch.pending = null; patch.clues = []; patch.selfPick = false;
     }
     await stateRef().update(patch);
   });
@@ -469,6 +533,7 @@ function adjust(id, d) {
 }
 
 function draw() {
+  if (!S || S.gameResult || !iDraw()) return;
   const used = S.used || [], current = roundSecret();
   let pool = monsters.filter(m => !used.includes(m) && m !== current);
   if (!pool.length) pool = monsters.filter(m => m !== current);
@@ -479,11 +544,11 @@ function draw() {
   showSecret = false;
   secret = { name, gameId, round, forId }; render();
   enqueue(() => db.doc(`data/users/${me}/secret`).set({ name, gameId, round, forId }));
-  if (!S.drawn) enqueue(() => stateRef().update({ drawn: true }));
+  if (!S.drawn) enqueue(() => stateRef().update({ drawn: true, ...startTimer() }));
 }
 
 function turnHtml(st, mId, asker, mq) {
-  if (!mId || !st.drawn) return "";
+  if (st.gameResult || !mId || !st.drawn) return "";
   const pend = st.pending, out = st.questions >= mq;
   const mName = esc(nameOf(mId));
   const canAnswer = controls(mId);
@@ -530,7 +595,10 @@ function turnHtml(st, mId, asker, mq) {
   return `<div class="turnbox hot"><p class="turn mine">${head}</p>${body}</div>`;
 }
 
-function endRound(outcome, winnerId, extra = {}, baseLog = (S.log || []), nameOverride = null) {
+function endRound(outcome, winnerId, extra = {}, baseLog = (S.log || []), nameOverride = null, timedOut = false) {
+  if (S.gameResult) return Promise.resolve();
+  if (outcome === "right" && timeExpired()) return Promise.resolve();
+  const expected = { gameId: S.gameId, round: S.round, monsterId: S.monsterId, turn: S.turn, roundDeadline: S.roundDeadline || null };
   const name = nameOverride || roundSecret() || (outcome === "right" && S.pending && S.pending.type === "guess" ? S.pending.name : null);
   const o = order(), i = o.indexOf(S.monsterId);
   const next = o.length ? o[(i + 1) % o.length] : null;
@@ -539,21 +607,21 @@ function endRound(outcome, winnerId, extra = {}, baseLog = (S.log || []), nameOv
   if (outcome === "stump" && players()[S.monsterId]) pl[S.monsterId] = { score: (players()[S.monsterId].score || 0) + 3 };
   const entry = { r: S.round, k: outcome, id: outcome === "right" ? winnerId : S.monsterId };
   const patch = {
-    round: S.round + 1, monsterId: next, questions: 0, turn: 0, drawn: false,
-    lastRound: { round: S.round, monsterId: S.monsterId, winnerId: winnerId || null, outcome, name: name || null, selfPick: !!S.selfPick },
+    round: S.round + 1, monsterId: next, questions: 0, turn: 0, drawn: false, roundDeadline: null,
+    lastRound: { round: S.round, monsterId: S.monsterId, winnerId: winnerId || null, outcome, name: name || null, selfPick: !!S.selfPick, timedOut },
     log: [entry, ...baseLog].slice(0, 40),
     pending: null, clues: [], selfPick: false,
     ...(Object.keys(pl).length ? { players: pl } : {}),
   };
   if (name) patch.used = [...(S.used || []), name];
   showSecret = false;
-  enqueue(() => stateRef().update(patch));
+  return enqueue(() => session.finishRound(expected, patch, timedOut));
 }
 
 $("secretArea").addEventListener("click", async e => {
   const b = e.target.closest("button[data-act]"); if (!b) return;
   if (b.dataset.act === "draw") draw();
-  if (b.dataset.act === "self" && isHost) { enqueue(() => stateRef().update({ drawn: true, selfPick: true })); openGuide("browse"); }
+  if (b.dataset.act === "self" && isHost) { enqueue(() => stateRef().update({ drawn: true, selfPick: true, ...startTimer() })); openGuide("browse"); }
   if (b.dataset.act === "gallery") openGuide("browse");
   if (b.dataset.act === "peek") { showSecret = !showSecret; render(); }
   if (b.dataset.act === "copy") {
@@ -577,12 +645,33 @@ let guideOpen = false, guideMode = "browse", guideView = null, lastGuideHtml = n
 function guideList() { return [...monsters].sort((a, b) => norm(a).localeCompare(norm(b))); }
 function ruledOut() { return S ? (S.clues || []).filter(c => c.ans === "wrong" && c.guess).map(c => c.guess) : []; }
 function guideCanAct(mode = guideMode) {
-  if (!S || !S.monsterId || !S.drawn || S.pending) return false;
+  if (!S || timeExpired() || !S.monsterId || !S.drawn || S.pending) return false;
   if (mode === "guess") return !!actingAsker();
   if (mode === "correct") return controls(S.monsterId) && !!currentAsker();
   return false;
 }
+function playPageTurn() {
+  if (!soundOn) return;
+  const context = ensureAudio();
+  if (!context || context.state !== "running") return;
+  const duration = 0.32, t = context.currentTime;
+  const buffer = context.createBuffer(1, Math.ceil(context.sampleRate * duration), context.sampleRate);
+  const samples = buffer.getChannelData(0);
+  for (let i = 0; i < samples.length; i++) samples[i] = Math.random() * 2 - 1;
+  const source = context.createBufferSource(); source.buffer = buffer;
+  const filter = context.createBiquadFilter(); filter.type = "bandpass"; filter.Q.value = 0.7;
+  filter.frequency.setValueAtTime(1600, t); filter.frequency.exponentialRampToValueAtTime(700, t + duration);
+  const gain = context.createGain();
+  gain.gain.setValueAtTime(0.0001, t);
+  gain.gain.exponentialRampToValueAtTime(0.13, t + 0.04);
+  gain.gain.exponentialRampToValueAtTime(0.035, t + 0.12);
+  gain.gain.exponentialRampToValueAtTime(0.09, t + 0.18);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t + duration);
+  source.connect(filter).connect(gain).connect(context.destination);
+  source.start(t); source.stop(t + duration);
+}
 function openGuide(mode = "browse") {
+  if (!guideOpen) playPageTurn();
   guideMode = mode; guideView = null; guideOpen = true; lastGuideHtml = null; lastGuideView = undefined; indexScroll = 0;
   $("guide").classList.remove("hidden");
   renderGuide();
@@ -663,11 +752,13 @@ $("guidePage").addEventListener("click", async e => {
 });
 
 function submitGuess(name) {
+  if (timeExpired()) { updateTimer(); return; }
   const a = actingAsker(); if (!a || S.pending || !monsters.includes(name)) return;
   enqueue(() => stateRef().update({ pending: { type: "guess", by: a, name, id: rid() } }));
 }
 let answeredKey = null;
 function answer(ans) {
+  if (timeExpired()) { updateTimer(); return; }
   if (!controls(S.monsterId)) return;
   if (S.pending && S.pending.type === "guess") return;
   if (S.questions >= maxQ()) return;
@@ -736,57 +827,63 @@ $("board").addEventListener("click", e => {
   const t = e.target.closest("button"); if (!t || !isHost) return;
   if (t.dataset.inc) adjust(t.dataset.inc, 1);
   if (t.dataset.dec) adjust(t.dataset.dec, -1);
-  if (t.dataset.mon) enqueue(() => stateRef().update({ monsterId: t.dataset.mon, drawn: false, questions: 0, turn: 0, pending: null, clues: [] }));
+  if (t.dataset.mon) enqueue(() => stateRef().update({ monsterId: t.dataset.mon, drawn: false, roundDeadline: null, questions: 0, turn: 0, pending: null, clues: [] }));
   if (t.dataset.rm) { const id = t.dataset.rm; askConfirm(`Remove ${nameOf(id)} from the game?`, "Remove").then(ok => { if (ok) removePlayer(id); }); }
 });
 
-$("skipTurnBtn").onclick = () => {
-  if (!isHost || !S) return;
+function skipTurn() {
+  if (!isHost || !S || S.gameResult) return;
   const who = currentAsker();
   enqueue(() => stateRef().update({ turn: S.turn + 1, pending: null }));
   if (who) toast(`Skipped ${nameOf(who)}'s turn.`);
+}
+$("skipTurnBtn").onclick = skipTurn;
+$("gameSkipTurn").onclick = skipTurn;
+$("gameEnd").onclick = async () => {
+  if (!isHost || !S || S.gameResult) return;
+  const gameId = S.gameId;
+  if (await askConfirm("End the game now? The highest score wins, including any ties.", "End game")) {
+    enqueue(() => session.endGame(gameId));
+  }
 };
 $("setMonsterBtn").onclick = async () => {
-  if (!isHost || !S) return;
+  if (!isHost || !S || S.gameResult) return;
   const id = $("monsterSelect").value; if (!id || !players()[id]) return;
   if (id === S.monsterId) { toast(`${nameOf(id)} is already the monster.`); return; }
   if (S.drawn && !(await askConfirm(`Make ${nameOf(id)} the monster? This round starts over with a fresh draw.`, "Switch monster"))) return;
-  enqueue(() => stateRef().update({ monsterId: id, drawn: false, questions: 0, turn: 0, pending: null, clues: [], selfPick: false }));
+  enqueue(() => stateRef().update({ monsterId: id, drawn: false, roundDeadline: null, questions: 0, turn: 0, pending: null, clues: [], selfPick: false }));
   toast(`${nameOf(id)} is now the monster.`);
 };
 document.querySelector(".modeseg").addEventListener("click", e => {
-  const b = e.target.closest("button[data-mode]"); if (!b || !isHost || !S) return;
+  const b = e.target.closest("button[data-mode]"); if (!b || (S && !isHost)) return;
   const on = b.dataset.mode === "host";
+  if (!S) { setupHostMode = on; renderSetup(); return; }
   if (on === hostRun()) return;
   enqueue(() => stateRef().update({ hostMode: on }));
   toast(on ? "You're now running every turn from your screen." : "Players now use their own screens.");
 });
 
 // host tools
-$("guestForm").addEventListener("submit", e => {
-  e.preventDefault();
-  const name = $("guestName").value.trim(); if (!name) return;
-  const id = "g-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-  enqueue(async () => {
-    const entry = { joinedAt: Date.now(), score: 0, guestName: name };
-    if (!S) await stateRef().set(freshState({ [id]: entry }, id));
-    else await stateRef().update({ players: { [id]: entry }, ...(S.monsterId && players()[S.monsterId] ? {} : { monsterId: id }) });
-  });
-  $("guestName").value = "";
-});
 $("skipBtn").onclick = async () => { if (S && await askConfirm("Skip this round? Nobody gets points.", "Skip round")) endRound("skip"); };
-$("newGameBtn").onclick = async () => {
+async function startNewGame() {
+  if (!isHost || !S) return;
   if (!(await askConfirm("Start a new game? Scores reset to zero. Players stay.", "Start new game"))) return;
   const pl = {}; order().forEach(id => { pl[id] = { ...players()[id], score: 0 }; });
-  enqueue(() => stateRef().set({ ...freshState(pl, order()[0] || null), maxQ: maxQ(), hostMode: hostRun() }));
-};
+  enqueue(() => stateRef().set({ ...freshState(pl, order()[0] || null), maxQ: maxQ(), hostMode: hostRun(), difficulty: difficulty(), totalRounds: S.totalRounds || DEFAULT_ROUNDS }));
+}
+$("newGameBtn").onclick = startNewGame;
+$("gameNew").onclick = startNewGame;
 document.querySelector(".seg").addEventListener("click", e => {
-  const b = e.target.closest("button[data-q]"); if (!b || !S) return;
+  const b = e.target.closest("button[data-q]"); if (!b || (S && !isHost)) return;
   const n = +b.dataset.q;
+  if (!S) { setupQ = n; renderSetup(); return; }
   enqueue(() => stateRef().update({ maxQ: n, questions: Math.min(S.questions, n) }));
   toast(`Each round now has ${n} questions.`);
 });
-const saveMonsters = (list, descs = customDescs) => enqueue(() => db.doc("game/monsters").set({ list, descs }));
+const saveMonsters = (list, descs = customDescs) => {
+  if (!S) { monsters = list; customDescs = descs; renderSetup(); return; }
+  if (isHost) return enqueue(() => db.doc("game/monsters").set({ list, descs }));
+};
 function closeReveal() { revealOpen = false; render(); }
 $("revealClose").onclick = closeReveal;
 $("reveal").addEventListener("click", e => { if (e.target.id === "reveal") closeReveal(); });
@@ -804,3 +901,43 @@ $("chips").addEventListener("click", e => {
   saveMonsters(monsters.filter((_, i) => i !== +t.dataset.mrm));
 });
 $("restoreMon").onclick = () => { saveMonsters([...DEFAULT_MONSTERS], {}); if (S) enqueue(() => stateRef().update({ used: [] })); toast("Default monster list restored."); };
+
+$("difficulty").onchange = () => {
+  const value = $("difficulty").value;
+  if (!Object.hasOwn(DIFFICULTIES, value)) return;
+  if (!S) { setupDifficulty = value; return; }
+  if (!isHost || S.drawn) { renderSetup(); return; }
+  enqueue(() => stateRef().update({ difficulty: value, roundDeadline: null }));
+};
+
+$("totalRounds").onchange = () => {
+  const input = $("totalRounds"), value = Number(input.value);
+  const minimum = S ? roundPlan(S).minimum : 1;
+  if (!Number.isSafeInteger(value) || value < minimum || value > 999) {
+    input.value = S ? roundPlan(S).total : setupRounds;
+    return;
+  }
+  if (!S) { setupRounds = value; return; }
+  if (!isHost || S.gameResult) return;
+  enqueue(() => stateRef().update({ totalRounds: value }));
+};
+let dismissedGameResult = null;
+function renderGameResult() {
+  const result = S?.gameResult;
+  $("viewResults").classList.toggle("hidden", !result);
+  if (!result || dismissedGameResult === S.gameId) {
+    $("gameOver").classList.add("hidden");
+    return;
+  }
+  if (guideOpen) closeGuide();
+  if (!$("confirmBox").classList.contains("hidden")) $("confirmCancel").click();
+  const winners = result.winners.map(player => player.name);
+  $("winnerTitle").textContent = winners.length > 1 ? "It’s a tie!" : "We have a winner!";
+  $("winnerNames").textContent = winners.join(" & ") || "Game over";
+  $("winnerScore").textContent = `${result.score} ${result.score === 1 ? "point" : "points"} · ${result.rounds} ${result.rounds === 1 ? "round" : "rounds"} played`;
+  $("roundTimer").textContent = "Game over";
+  $("secretArea").innerHTML = '<p class="muted">The game has ended. The host can start a new game from Room setup.</p>';
+  if ($("gameOver").classList.contains("hidden")) { $("gameOver").classList.remove("hidden"); $("winnerClose").focus(); }
+}
+$("winnerClose").onclick = () => { dismissedGameResult = S.gameId; $("gameOver").classList.add("hidden"); };
+$("viewResults").onclick = () => { dismissedGameResult = null; renderGameResult(); };

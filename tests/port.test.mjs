@@ -7,6 +7,7 @@ if (!globalThis.crypto) globalThis.crypto = webcrypto;
 import { pictureMaps, slug } from '../scripts/extract-images.mjs';
 import * as monsters from '../js/monsters.js';
 import { makeSession, normalizeCode, randomCode } from '../js/store.js';
+import { completeRound, roundPlan } from '../js/rounds.js';
 
 const root = new URL('../', import.meta.url);
 const reference = await readFile(new URL('reference/mystery-monster-scorekeeper.html', root), 'utf8');
@@ -128,4 +129,78 @@ test('room creation retries a collision without overwriting an existing room', a
   await f.session('host').createRoom({}, 'Host');
   assert.equal(attempt, 2);
   assert.equal(f.docs.size, 1);
+});
+
+test('round completion rejects stale results, late correct guesses, and duplicate timeouts', async () => {
+  const f = fixture(), host = f.session('host');
+  const code = await host.createRoom({ gameId: 'game', round: 1, turn: 0, drawn: true, roundDeadline: Date.now() - 1000 }, 'Pumpkin');
+  const path = `rooms/${code}`;
+  const expected = { gameId: 'game', round: 1, turn: 0, monsterId: 'host', roundDeadline: f.docs.get(path).roundDeadline };
+  const patch = { round: 2, drawn: false, roundDeadline: null, players: { host: { score: 3 } }, lastRound: { outcome: 'stump', timedOut: true } };
+  assert.equal(await host.finishRound(expected, { ...patch, lastRound: { outcome: 'right' } }), false);
+  assert.equal(await host.finishRound({ ...expected, gameId: 'old' }, patch, true), false);
+  assert.equal(await host.finishRound(expected, patch, true), true);
+  assert.equal(await host.finishRound(expected, patch, true), false);
+  assert.equal(f.docs.get(path).players.host.score, 3);
+  assert.equal(f.docs.get(path).players.host.name, 'Pumpkin');
+  const state = { ...f.docs.get(path), round: 3, turn: 0, drawn: true, roundDeadline: Date.now() + 600000 };
+  f.docs.set(path, state);
+  const active = { ...expected, round: 3, roundDeadline: state.roundDeadline };
+  assert.equal(await host.finishRound(active, patch, true), false);
+  assert.equal(await host.finishRound(active, { ...patch, round: 4, lastRound: { outcome: 'right' } }), true);
+  f.docs.set(path, { ...state, roundDeadline: null });
+  assert.equal(await host.finishRound({ ...active, roundDeadline: null }, patch, true), false);
+});
+
+test('round count covers every player, includes late arrivals, and chooses unserved monsters first', () => {
+  const players = { a: { name: 'A', joinedAt: 1, score: 0 }, b: { name: 'B', joinedAt: 2, score: 0 }, c: { name: 'C', joinedAt: 3, score: 0 } };
+  let state = { players, round: 1, totalRounds: 1, monsterId: 'a', monsterTurns: [] };
+  assert.equal(roundPlan(state).total, 3);
+  let patch = completeRound(state, {});
+  assert.equal(patch.gameResult, null);
+  assert.equal(patch.monsterId, 'b');
+  assert.equal(patch.totalRounds, 3);
+  state = { ...state, ...patch, round: 3, monsterId: 'a' }; // Host manually repeats a monster.
+  patch = completeRound(state, {});
+  assert.equal(patch.totalRounds, 5);
+  assert.equal(patch.monsterId, 'b');
+  assert.equal(patch.gameResult, null);
+  state = { ...state, ...patch };
+  patch = completeRound(state, {});
+  assert.equal(patch.monsterId, 'c');
+  state = { ...state, ...patch };
+  patch = completeRound(state, { players: { c: { score: 3 } } });
+  assert.equal(patch.gameResult.winners[0].id, 'c');
+  assert.equal(patch.gameResult.score, 3);
+  assert.equal(patch.round, 5);
+  assert.equal(patch.monsterId, null);
+  const late = { ...state, players: { ...players, d: { name: 'D', joinedAt: 4, score: 0 } } };
+  const extended = completeRound(late, {});
+  assert.equal(extended.gameResult, null);
+  assert.equal(extended.monsterId, 'd');
+  assert.equal(extended.totalRounds, 6);
+});
+test('final winners include final-round points and all ties, including negative scores', () => {
+  const state = { round: 2, totalRounds: 2, monsterId: 'b', monsterTurns: ['a'], players: {
+    a: { name: 'A', joinedAt: 1, score: 2 }, b: { name: 'B', joinedAt: 2, score: 0 } } };
+  assert.deepEqual(completeRound(state, { players: { b: { score: 2 } } }).gameResult.winners.map(p => p.id), ['a', 'b']);
+  const result = completeRound(state, { players: { a: { score: -2 }, b: { score: -1 } } }).gameResult;
+  assert.equal(result.winners[0].name, 'B');
+  assert.equal(result.score, -1);
+});
+
+test('only the host can end a game early and the result uses current scores', async () => {
+  const f = fixture(), host = f.session('host');
+  const code = await host.createRoom({ gameId: 'early', round: 2, drawn: true, roundDeadline: Date.now() + 50000 }, 'Pumpkin');
+  const player = f.session('player'); await player.joinRoom(code, 'Ghost');
+  await host.db.doc('game/state').update({ players: { player: { score: 4 } } });
+  assert.equal(await player.endGame('early'), false);
+  assert.equal(await host.endGame('stale'), false);
+  assert.equal(await host.endGame('early'), true);
+  const state = f.docs.get(`rooms/${code}`);
+  assert.equal(state.gameResult.winners[0].name, 'Ghost');
+  assert.equal(state.gameResult.endedEarly, true);
+  assert.equal(state.roundDeadline, null);
+  assert.equal(state.monsterId, null);
+  assert.equal(await host.endGame('early'), false);
 });

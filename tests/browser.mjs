@@ -58,7 +58,7 @@ const server = createServer(async (req, res) => {
     if (path.endsWith('/js/store.js') && req.headers['x-production'] !== 'true') {
       data = store.slice(0, store.indexOf('export async function connect()')) + testConnect;
     }
-    res.setHeader('Content-Type', ({ '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.jpg': 'image/jpeg' })[extname(path)] || 'text/plain');
+    res.setHeader('Content-Type', ({ '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.jpg': 'image/jpeg', '.png': 'image/png', '.ico': 'image/x-icon' })[extname(path)] || 'text/plain');
     res.end(data);
   } catch { res.writeHead(404).end('Not found'); }
 });
@@ -87,7 +87,24 @@ async function context(options = {}) {
   });
   return ctx;
 }
-async function click(page, selector) { await page.locator(selector).click(); }
+async function click(page, selector) {
+  if (/^\[data-(act|t|g)[=]/.test(selector) && await page.locator("#hostPanel").isVisible()) await page.locator("#finishSetup").click();
+  const target = page.locator(selector);
+  if (await target.count() && await target.evaluate(el => !!el.closest('#hostPanel')) && !await target.isVisible()) await page.locator('#roomSetupBtn').click();
+  if (await target.count() && await target.evaluate(el => !!el.closest('#game')) && !await target.isVisible() && await page.locator('#hostPanel').isVisible()) await page.locator('#finishSetup').click();
+  await target.click();
+  if (/^\[data-(q|mode)[=]/.test(selector)) await page.locator("#finishSetup").click();
+  if (selector === '#createRoom') {
+    assert.equal(await page.locator('#hostPanel').isVisible(), true);
+    assert.equal(await page.locator('#game').isVisible(), false);
+    assert.equal(await page.locator('#guestForm').count(), 0);
+    assert.equal(await page.locator('#difficulty').inputValue(), 'normal');
+    await page.locator('[data-q="10"]').click();
+    assert.equal(await page.locator('[data-q="10"]').getAttribute('aria-pressed'), 'true');
+    await page.locator('[data-q="15"]').click();
+    await page.locator('#finishSetup').click();
+  }
+}
 async function confirm(page) { await click(page, '#confirmOk'); }
 async function guidePick(page, name) {
   await click(page, `[data-g="go"][data-name="${name.replaceAll('"', '\\"')}"]`);
@@ -113,7 +130,9 @@ try {
   assert.match(code, /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{6}$/);
   assert.equal(state().players[hostId].name, 'Pumpkin');
   assert.ok(await host.locator('#inviteArea').isVisible());
-  passed('create room, host role, named player, invite code');
+  assert.equal(await host.locator('.game-logo').evaluate(img => img.complete && img.naturalWidth > 0), true);
+  assert.equal(await host.locator('link[rel=icon]').count(), 2);
+  passed('create room, host role, named player, invite code and custom logo');
 
   const playerCtx = await context({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' });
   const player = await playerCtx.newPage(); await player.goto(`${origin}/?room=${code}`);
@@ -124,6 +143,8 @@ try {
   const playerId = Object.keys(state().players).find(id => id !== hostId);
   await wait(async () => (await host.locator('#board').textContent()).includes('Ghost'));
   assert.equal(await player.locator('#hostPanel').isVisible(), false);
+  assert.equal(await player.locator('#gameHostControls').isVisible(), false);
+  assert.equal(await host.locator('#gameHostControls').isVisible(), true);
   assert.equal(await player.locator('#inviteArea').isVisible(), false);
   passed('invite skips room choice; second device joins and scoreboard updates');
 
@@ -142,7 +163,20 @@ try {
   assert.deepEqual(state().clues.map(c => c.ans), ['yes', 'no']);
   passed('yes/no answers sync clues and extinguish candles');
 
+  await player.evaluate(() => {
+    window.pageTurnStarts = 0;
+    const original = AudioBufferSourceNode.prototype.start;
+    AudioBufferSourceNode.prototype.start = function(...args) { window.pageTurnStarts++; return original.apply(this, args); };
+  });
   await click(player, '[data-t=guess]');
+  assert.ok(await player.evaluate(() => window.pageTurnStarts > 0));
+  await click(player, '#guideClose'); await click(player, '#soundBtn');
+  const starts = await player.evaluate(() => window.pageTurnStarts);
+  await click(player, '[data-t=guess]');
+  assert.equal(await player.evaluate(() => window.pageTurnStarts), starts);
+  await click(player, '#guideClose'); await click(player, '#soundBtn');
+  await click(player, '[data-t=guess]');
+  passed('Field Guide opening plays page-turn audio and respects mute');
   const names = await player.locator('.gentry .gname').allTextContents();
   assert.equal(names.length, 48);
   await click(player, '[data-g=go][data-name="Dracula"]');
@@ -179,7 +213,7 @@ try {
   // the monster device then backfills the reveal with the private name.
   await click(player, '[data-act=draw]'); await wait(() => state().drawn);
   const secondSecret = docs.get(`rooms/${code}/secrets/${playerId}`).name;
-  await click(host, '#hostPanel summary');
+  await click(host, '#roomSetupBtn');
   await click(host, '[data-q="5"]'); await wait(() => state().maxQ === 5);
   for (let i = 1; i <= 5; i++) { await click(player, '[data-t=no]'); await wait(() => state().questions === i); }
   await host.locator('[data-t=pass]').waitFor();
@@ -196,9 +230,12 @@ try {
   await host.locator('.secret-body.blurwrap').waitFor();
   await click(host, '[data-act=peek]'); await host.locator('.secret-body:not(.blurwrap)').waitFor();
   await click(host, '[data-act=peek]');
-  await host.fill('#guestName', 'Boo'); await click(host, '#guestForm button');
+  assert.equal(await host.locator('#guestForm').count(), 0);
+  const thirdCtx = await context(), third = await thirdCtx.newPage();
+  await third.goto(`${origin}/?room=${code}`);
+  await third.fill('#displayName', 'Boo'); await click(third, '#inviteJoin button[type=submit]');
   await wait(() => Object.keys(state().players).length === 3);
-  const guestId = Object.keys(state().players).find(id => id.startsWith('g-'));
+  const guestId = Object.keys(state().players).find(id => id !== hostId && id !== playerId);
   const turn = state().turn;
   await click(host, '#skipTurnBtn'); await wait(() => state().turn === turn + 1);
   await host.selectOption('#monsterSelect', guestId); await click(host, '#setMonsterBtn'); await confirm(host);
@@ -208,7 +245,7 @@ try {
   await host.locator('[data-t=right]').waitFor();
   await host.locator('[data-t=wrongq]').waitFor();
   await host.locator('[data-t=guess]').waitFor();
-  passed('host-run blur/show, add guest, skip turn, switch monster, self-pick, host guess controls');
+  passed('host-run blur/show, automatic player join, skip turn, switch monster, self-pick, host guess controls');
   const wrongAsker = Object.keys(state().players).filter(id => id !== guestId)[(state().round + state().turn) % 2];
   const oldScore = state().players[wrongAsker].score;
   await click(host, '[data-t=wrongq]'); await wait(() => state().questions === 1);
@@ -248,6 +285,7 @@ try {
   }
   passed('all 5/10/15 question settings update candle count');
 
+  await click(host, '#roomSetupBtn');
   await host.fill('#newMonster', 'Test beast'); await host.fill('#newDesc', 'A test monster.');
   await click(host, '#monForm button'); await wait(() => docs.get(`${roomPath}/config/monsters`)?.list.includes('Test beast'));
   await click(host, '#restoreMon'); await wait(() => docs.get(`${roomPath}/config/monsters`)?.list.length === 48);
@@ -259,6 +297,7 @@ try {
   assert.equal(state().hostUid, hostId);
   assert.equal(state().hostMode, true);
   assert.ok(Object.values(state().players).every(p => p.score === 0));
+  if (await host.locator('#hostPanel').isVisible()) await click(host, '#finishSetup');
   await host.locator('[data-act=draw]').waitFor();
   await click(host, '[data-act=draw]'); await wait(() => state().drawn);
   await click(host, '[data-t=yes]'); await wait(() => state().questions === 1);
@@ -286,6 +325,98 @@ try {
   assert.equal(Object.keys(state().players).length, 3);
   passed('typed room-code validation and separate-room isolation');
 
+  const timedCode = new URL(other.url()).searchParams.get('room');
+  const timedPath = `rooms/${timedCode}`, timedState = () => docs.get(timedPath);
+  assert.equal(timedState().difficulty, 'normal');
+  await click(other, '#roomSetupBtn');
+  for (const [mode, minutes] of [['easy', 15], ['normal', 10], ['hard', 5], ['extreme', 3], ['casual', 0]]) {
+    await other.selectOption('#difficulty', mode);
+    await wait(() => timedState().difficulty === mode);
+    await wait(async () => (await other.locator('#roundTimer').textContent()).includes(minutes ? `${minutes}:00` : 'No timer'));
+  }
+  await click(other, '#finishSetup');
+  await click(other, '[data-act=draw]'); await wait(() => timedState().drawn);
+  assert.equal(timedState().roundDeadline, null);
+  passed('Normal default, all five mode settings, and Casual draws without a timer');
+  await click(other, '#roomSetupBtn');
+  assert.equal(await other.locator('#difficulty').isDisabled(), true);
+  await click(other, '#skipBtn'); await confirm(other); await wait(() => timedState().round === 2);
+  await other.selectOption('#difficulty', 'extreme'); await wait(() => timedState().difficulty === 'extreme');
+  await click(other, '#finishSetup');
+  const watcherCtx = await context(), watcher = await watcherCtx.newPage();
+  await watcher.goto(`${origin}/?room=${timedCode}`);
+  await watcher.fill('#displayName', 'Watcher'); await click(watcher, '#inviteJoin button[type=submit]');
+  await watcher.locator('#game:not(.hidden)').waitFor();
+  const started = Date.now();
+  await click(other, '[data-act=draw]'); await wait(() => timedState().drawn);
+  assert.ok(timedState().roundDeadline >= started + 180000);
+  assert.ok(timedState().roundDeadline < Date.now() + 181000);
+  await wait(async () => (await watcher.locator('#roundTimer').textContent()).includes('Extreme'));
+  const deadline = timedState().roundDeadline;
+  await watcher.reload(); await click(watcher, '#inviteJoin button[type=submit]');
+  assert.equal(timedState().roundDeadline, deadline);
+  passed('shared Extreme deadline starts on draw and survives a player refresh');
+  // Move the shared deadline forward for a real countdown without a three-minute test wait.
+  docs.set(timedPath, { ...timedState(), roundDeadline: Date.now() + 2500 });
+  await wait(async () => (await other.locator('#roundTimer').textContent()).includes('0:02'));
+  await wait(async () => (await watcher.locator('#roundTimer').textContent()).includes('0:02'));
+  await wait(() => timedState().round === 3);
+  assert.equal(timedState().lastRound.timedOut, true);
+  assert.equal(timedState().lastRound.outcome, 'stump');
+  assert.equal(timedState().players[timedState().hostUid].score, 3);
+  assert.equal(timedState().roundDeadline, null);
+  await other.locator('#reveal:not(.hidden)').waitFor();
+  await watcher.locator('#reveal:not(.hidden)').waitFor();
+  assert.match(await watcher.locator('#revealKicker').textContent(), /Time’s up!/);
+  passed('all players see countdown and timeout reveal; monster wins exactly +3');
+
+  await click(other, '#revealClose'); await click(watcher, '#revealClose');
+  await click(other, '#roomSetupBtn');
+  await other.fill('#totalRounds', '3'); await other.locator('#totalRounds').dispatchEvent('change');
+  await wait(() => timedState().totalRounds === 3);
+  await click(other, '#finishSetup');
+  await click(watcher, '[data-act=draw]'); await wait(() => timedState().drawn);
+  const finalSecret = docs.get(`rooms/${timedCode}/secrets/${timedState().monsterId}`).name;
+  await click(other, '[data-t=guess]'); await guidePick(other, finalSecret);
+  await wait(() => !!timedState().gameResult);
+  assert.equal(timedState().round, 3);
+  assert.equal(timedState().monsterId, null);
+  assert.equal(timedState().monsterTurns.length, 2);
+  assert.equal(timedState().gameResult.score, 5);
+  await other.locator('#gameOver:not(.hidden)').waitFor();
+  await watcher.locator('#gameOver:not(.hidden)').waitFor();
+  assert.equal(await other.locator('#winnerNames').textContent(), 'Other');
+  assert.equal(await watcher.locator('#winnerNames').textContent(), 'Other');
+  await click(other, '#winnerClose');
+  assert.equal(await other.locator('[data-act=draw]').count(), 0);
+  await click(other, '#viewResults'); await other.locator('#gameOver:not(.hidden)').waitFor();
+  await watcher.reload(); await click(watcher, '#inviteJoin button[type=submit]');
+  await watcher.locator('#gameOver:not(.hidden)').waitFor();
+  passed('configured final round ends play and announces the winner to all players, including after refresh');
+  await click(other, '#winnerClose'); await click(other, '#roomSetupBtn');
+  await click(other, '#newGameBtn'); await confirm(other);
+  await wait(() => timedState().round === 1 && !timedState().gameResult);
+  assert.deepEqual(timedState().monsterTurns, []);
+  assert.equal(timedState().totalRounds, 3);
+  passed('new game clears final results and monster-turn history while preserving round count');
+
+  await click(other, '#finishSetup');
+  const skippedTurn = timedState().turn;
+  await click(other, '#gameSkipTurn'); await wait(() => timedState().turn === skippedTurn + 1);
+  await click(other, '#gameEnd'); await click(other, '#confirmCancel');
+  assert.equal(timedState().gameResult, null);
+  await click(other, '#gameEnd'); await confirm(other);
+  await wait(() => timedState().gameResult?.endedEarly);
+  await other.locator('#gameOver:not(.hidden)').waitFor();
+  await watcher.locator('#gameOver:not(.hidden)').waitFor();
+  assert.match(await other.locator('#winnerTitle').textContent(), /tie/);
+  assert.equal(timedState().gameResult.winners.length, 2);
+  await click(other, '#winnerClose');
+  assert.equal(await other.locator('#gameEnd').isDisabled(), true);
+  await click(other, '#gameNew'); await confirm(other);
+  await wait(() => !timedState().gameResult && timedState().round === 1);
+  passed('in-game host controls skip turns, confirm early endings, announce ties, and start new games');
+
   assert.deepEqual(errors, []); assert.deepEqual(brokenImages, []);
   console.log(`${checks} browser checks passed; no uncaught errors or missing requested images.`);
-} finally { await browser.close(); await new Promise(r => server.close(r)); }
+} catch (error) { console.error('Browser errors:', errors); throw error; } finally { await browser.close(); await new Promise(r => server.close(r)); }
