@@ -58,7 +58,7 @@ const server = createServer(async (req, res) => {
     if (path.endsWith('/js/store.js') && req.headers['x-production'] !== 'true') {
       data = store.slice(0, store.indexOf('export async function connect()')) + testConnect;
     }
-    res.setHeader('Content-Type', ({ '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.jpg': 'image/jpeg' })[extname(path)] || 'text/plain');
+    res.setHeader('Content-Type', ({ '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.jpg': 'image/jpeg', '.png': 'image/png', '.ico': 'image/x-icon' })[extname(path)] || 'text/plain');
     res.end(data);
   } catch { res.writeHead(404).end('Not found'); }
 });
@@ -130,7 +130,9 @@ try {
   assert.match(code, /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{6}$/);
   assert.equal(state().players[hostId].name, 'Pumpkin');
   assert.ok(await host.locator('#inviteArea').isVisible());
-  passed('create room, host role, named player, invite code');
+  assert.equal(await host.locator('.game-logo').evaluate(img => img.complete && img.naturalWidth > 0), true);
+  assert.equal(await host.locator('link[rel=icon]').count(), 2);
+  passed('create room, host role, named player, invite code and custom logo');
 
   const playerCtx = await context({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' });
   const player = await playerCtx.newPage(); await player.goto(`${origin}/?room=${code}`);
@@ -141,6 +143,8 @@ try {
   const playerId = Object.keys(state().players).find(id => id !== hostId);
   await wait(async () => (await host.locator('#board').textContent()).includes('Ghost'));
   assert.equal(await player.locator('#hostPanel').isVisible(), false);
+  assert.equal(await player.locator('#gameHostControls').isVisible(), false);
+  assert.equal(await host.locator('#gameHostControls').isVisible(), true);
   assert.equal(await player.locator('#inviteArea').isVisible(), false);
   passed('invite skips room choice; second device joins and scoreboard updates');
 
@@ -159,7 +163,20 @@ try {
   assert.deepEqual(state().clues.map(c => c.ans), ['yes', 'no']);
   passed('yes/no answers sync clues and extinguish candles');
 
+  await player.evaluate(() => {
+    window.pageTurnStarts = 0;
+    const original = AudioBufferSourceNode.prototype.start;
+    AudioBufferSourceNode.prototype.start = function(...args) { window.pageTurnStarts++; return original.apply(this, args); };
+  });
   await click(player, '[data-t=guess]');
+  assert.ok(await player.evaluate(() => window.pageTurnStarts > 0));
+  await click(player, '#guideClose'); await click(player, '#soundBtn');
+  const starts = await player.evaluate(() => window.pageTurnStarts);
+  await click(player, '[data-t=guess]');
+  assert.equal(await player.evaluate(() => window.pageTurnStarts), starts);
+  await click(player, '#guideClose'); await click(player, '#soundBtn');
+  await click(player, '[data-t=guess]');
+  passed('Field Guide opening plays page-turn audio and respects mute');
   const names = await player.locator('.gentry .gname').allTextContents();
   assert.equal(names.length, 48);
   await click(player, '[data-g=go][data-name="Dracula"]');
@@ -353,6 +370,53 @@ try {
   assert.match(await watcher.locator('#revealKicker').textContent(), /Time’s up!/);
   passed('all players see countdown and timeout reveal; monster wins exactly +3');
 
+  await click(other, '#revealClose'); await click(watcher, '#revealClose');
+  await click(other, '#roomSetupBtn');
+  await other.fill('#totalRounds', '3'); await other.locator('#totalRounds').dispatchEvent('change');
+  await wait(() => timedState().totalRounds === 3);
+  await click(other, '#finishSetup');
+  await click(watcher, '[data-act=draw]'); await wait(() => timedState().drawn);
+  const finalSecret = docs.get(`rooms/${timedCode}/secrets/${timedState().monsterId}`).name;
+  await click(other, '[data-t=guess]'); await guidePick(other, finalSecret);
+  await wait(() => !!timedState().gameResult);
+  assert.equal(timedState().round, 3);
+  assert.equal(timedState().monsterId, null);
+  assert.equal(timedState().monsterTurns.length, 2);
+  assert.equal(timedState().gameResult.score, 5);
+  await other.locator('#gameOver:not(.hidden)').waitFor();
+  await watcher.locator('#gameOver:not(.hidden)').waitFor();
+  assert.equal(await other.locator('#winnerNames').textContent(), 'Other');
+  assert.equal(await watcher.locator('#winnerNames').textContent(), 'Other');
+  await click(other, '#winnerClose');
+  assert.equal(await other.locator('[data-act=draw]').count(), 0);
+  await click(other, '#viewResults'); await other.locator('#gameOver:not(.hidden)').waitFor();
+  await watcher.reload(); await click(watcher, '#inviteJoin button[type=submit]');
+  await watcher.locator('#gameOver:not(.hidden)').waitFor();
+  passed('configured final round ends play and announces the winner to all players, including after refresh');
+  await click(other, '#winnerClose'); await click(other, '#roomSetupBtn');
+  await click(other, '#newGameBtn'); await confirm(other);
+  await wait(() => timedState().round === 1 && !timedState().gameResult);
+  assert.deepEqual(timedState().monsterTurns, []);
+  assert.equal(timedState().totalRounds, 3);
+  passed('new game clears final results and monster-turn history while preserving round count');
+
+  await click(other, '#finishSetup');
+  const skippedTurn = timedState().turn;
+  await click(other, '#gameSkipTurn'); await wait(() => timedState().turn === skippedTurn + 1);
+  await click(other, '#gameEnd'); await click(other, '#confirmCancel');
+  assert.equal(timedState().gameResult, null);
+  await click(other, '#gameEnd'); await confirm(other);
+  await wait(() => timedState().gameResult?.endedEarly);
+  await other.locator('#gameOver:not(.hidden)').waitFor();
+  await watcher.locator('#gameOver:not(.hidden)').waitFor();
+  assert.match(await other.locator('#winnerTitle').textContent(), /tie/);
+  assert.equal(timedState().gameResult.winners.length, 2);
+  await click(other, '#winnerClose');
+  assert.equal(await other.locator('#gameEnd').isDisabled(), true);
+  await click(other, '#gameNew'); await confirm(other);
+  await wait(() => !timedState().gameResult && timedState().round === 1);
+  passed('in-game host controls skip turns, confirm early endings, announce ties, and start new games');
+
   assert.deepEqual(errors, []); assert.deepEqual(brokenImages, []);
   console.log(`${checks} browser checks passed; no uncaught errors or missing requested images.`);
-} finally { await browser.close(); await new Promise(r => server.close(r)); }
+} catch (error) { console.error('Browser errors:', errors); throw error; } finally { await browser.close(); await new Promise(r => server.close(r)); }

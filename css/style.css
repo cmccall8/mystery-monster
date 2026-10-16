@@ -241,3 +241,8 @@ button.glow.primary { color: var(--pumpkin-ink); }
 
 .round-timer { color: var(--flame); font-size: 1.15rem; font-weight: 700; font-variant-numeric: tabular-nums; }
 .round-timer.timer-low { color: #E5645C; }
+
+.game-title { display: flex; align-items: center; gap: 10px; }
+.game-logo { width: 1.15em; height: 1.15em; object-fit: contain; flex-shrink: 0; }
+
+.winner-names { font-size: 1.7rem; color: var(--flame); font-weight: 700; overflow-wrap: anywhere; }

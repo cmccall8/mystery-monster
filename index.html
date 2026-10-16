@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Mystery Monster</title>
+<link rel="icon" href="favicon.ico" sizes="16x16 32x32 48x48">
+<link rel="icon" type="image/png" sizes="32x32" href="images/favicon-32.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Pirata+One&family=Figtree:wght@400;500;700&display=swap" rel="stylesheet">
@@ -12,9 +14,10 @@
 <body>
 <div class="wrap">
   <header>
-    <h1>🎃 Mystery Monster</h1>
+    <h1 class="game-title"><img class="game-logo" src="images/game-logo.png" width="64" height="64" alt=""> <span>Mystery Monster</span></h1>
     <div class="row">
       <span id="inviteArea" class="row hidden"><span>Room <strong id="inviteCode"></strong></span><button id="copyInvite" class="ghost sm">Copy invite link</button></span>
+      <button id="viewResults" class="ghost sm hidden">View results</button>
       <button id="roomSetupBtn" class="ghost sm hidden">Room setup</button>
       <button id="guideBtn" class="primary sm">📖 Field Guide</button>
       <button id="soundBtn" class="ghost sm" aria-pressed="true">🔊 Sound on</button>
@@ -43,6 +46,9 @@
     <section class="panel hidden" id="hostPanel" aria-labelledby="setupHead">
       <h2 id="setupHead">Room setup</h2><p class="muted">Players join automatically using your invite link.</p>
       <div class="stack" style="margin:16px 0">
+        <label for="totalRounds">Round count</label>
+        <input id="totalRounds" type="number" min="1" max="999" step="1" value="10" inputmode="numeric">
+        <p id="roundCountNote" class="muted"></p>
         <label for="difficulty">Game mode</label>
         <select id="difficulty">
           <option value="casual">Casual — No timer</option>
@@ -96,6 +102,14 @@
     </section>
 
   <div id="game" class="hidden">
+    <section id="gameHostControls" class="stack hidden" aria-labelledby="hostControlsHead" style="margin-bottom:20px">
+      <h2 id="hostControlsHead">Host controls</h2>
+      <div class="row">
+        <button id="gameSkipTurn">Skip turn</button>
+        <button id="gameEnd">End game</button>
+        <button id="gameNew">Start a new game</button>
+      </div>
+    </section>
     <div class="grid">
       <section class="stack" aria-labelledby="roundHead">
         <h2 id="roundHead">This round</h2>
@@ -149,6 +163,16 @@
     <p class="card-desc" id="revealDesc"></p>
     <p class="card-meta" id="revealMeta"></p>
     <button class="primary" id="revealClose">On to the next round</button>
+  </div>
+</div>
+
+<div id="gameOver" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="winnerTitle">
+  <div class="card">
+    <img src="images/game-logo.png" width="96" height="96" alt="">
+    <h2 id="winnerTitle"></h2>
+    <p id="winnerNames" class="winner-names"></p>
+    <p id="winnerScore" class="card-meta"></p>
+    <button id="winnerClose" class="primary">View scoreboard</button>
   </div>
 </div>
 
