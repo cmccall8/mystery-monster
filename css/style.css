@@ -232,7 +232,7 @@ button.glow.primary { color: var(--pumpkin-ink); }
 .notice { text-align: center; padding: 40px 20px; }
 
 /* Room entry uses the same panels, typography and controls as the game. */
-#roomEntry { max-width: 560px; margin: 28px auto; }
+#roomEntry { max-width: 560px; margin: 40px auto 28px; }
 #roomEntry h2 { margin-bottom: 14px; }
 #roomEntry .row > input { flex: 1; min-width: 130px; }
 #entryError { color: #E5645C; min-height: 1.5em; }
@@ -243,6 +243,46 @@ button.glow.primary { color: var(--pumpkin-ink); }
 .round-timer.timer-low { color: #E5645C; }
 
 .game-title { display: flex; align-items: center; gap: 10px; }
-.game-logo { width: 1.15em; height: 1.15em; object-fit: contain; flex-shrink: 0; }
+.game-logo { width: 1.6em; height: 1.6em; object-fit: contain; flex-shrink: 0; }
 
 .winner-names { font-size: 1.7rem; color: var(--flame); font-weight: 700; overflow-wrap: anywhere; }
+.page-header { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "utility utility" "title game"; align-items: center; column-gap: 16px; row-gap: 12px; }
+.page-header .game-title { grid-area: title; min-width: 0; }
+.page-header .header-controls { display: contents; }
+.header-utility-controls, .header-game-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.header-utility-controls { justify-content: flex-end; }
+.header-utility-controls { grid-area: utility; justify-self: end; }
+.header-game-controls { grid-area: game; justify-self: end; align-self: end; }
+.header-game-actions { display: flex; justify-content: flex-end; align-items: flex-end; gap: 8px; flex-wrap: wrap; }
+.header-game-actions #guideBtn { font-size: .95rem; padding: 8px 12px; }
+.header-game-controls .round-tag { margin-left: 24px; }
+.header-game-controls .round-tag { font-size: .95rem; }
+.header-game-controls .round-tag strong { font-size: 1.25rem; }
+.round-timer-value { font-size: 1.7rem; line-height: 1; }
+.round-timer { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.round-timer-note { color: var(--muted); font-size: .8rem; font-weight: 400; }
+.secret-more { margin-top: 12px; }
+.secret-more summary { width: fit-content; color: var(--flame); cursor: pointer; font-weight: 600; }
+.secret-more[open] summary { margin-bottom: 8px; }
+@media (max-width: 600px) {
+  .page-header { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "utility utility" "title game"; column-gap: 8px; row-gap: 12px; }
+  .page-header .game-title { font-size: clamp(1.2rem, 5.5vw, 1.8rem); gap: 6px; }
+  .page-header .game-logo { width: 1.25em; height: 1.25em; }
+  .header-game-controls { gap: 6px; }
+  .header-game-actions { gap: 4px; }
+  .header-game-actions #guideBtn { font-size: .85rem; padding: 7px 8px; }
+  .header-game-controls .round-tag { font-size: .9rem; }
+  .header-game-controls .round-tag strong { font-size: 1.1rem; }
+}
+@media (max-width: 360px) {
+  .page-header { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "utility utility" "title game"; column-gap: 4px; }
+  .page-header .game-title { justify-self: start; gap: 4px; font-size: 1rem; }
+  .page-header .game-logo { width: 1.15em; height: 1.15em; }
+  .header-game-controls { justify-self: end; }
+  .header-game-actions { gap: 2px; }
+  .header-game-actions #guideBtn { font-size: .74rem; padding: 5px 6px; }
+  .header-game-controls .round-tag { margin-left: 8px; font-size: .74rem; }
+  .header-game-controls .round-tag strong { font-size: .95rem; }
+}
+.row.big .sometimes { background: var(--wax); border-color: var(--wax); color: var(--pumpkin-ink); min-width: 7rem; padding-inline: 12px; }
+.ans.sometimes { color: var(--flame); }

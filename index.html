@@ -13,17 +13,22 @@
 </head>
 <body>
 <div class="wrap">
-  <header>
-    <h1 class="game-title"><img class="game-logo" src="images/game-logo.png" width="64" height="64" alt=""> <span>Mystery Monster</span></h1>
-    <div class="row">
-      <span id="inviteArea" class="row hidden"><span>Room <strong id="inviteCode"></strong></span><button id="copyInvite" class="ghost sm">Copy invite link</button></span>
-      <button id="viewResults" class="ghost sm hidden">View results</button>
-      <button id="roomSetupBtn" class="ghost sm hidden">Room setup</button>
-      <button id="guideBtn" class="primary sm">📖 Field Guide</button>
-      <button id="soundBtn" class="ghost sm" aria-pressed="true">🔊 Sound on</button>
-      <div class="round-tag">Round <strong id="roundNum">1</strong></div>
-      <button id="joinTop" class="primary hidden">Join the game</button>
+  <header class="page-header">
+    <div class="header-controls">
+      <div class="header-utility-controls">
+        <span id="inviteArea" class="row hidden"><span>Room <strong id="inviteCode"></strong></span><button id="copyInvite" class="ghost sm">Copy invite link</button></span>
+        <button id="soundBtn" class="ghost sm" aria-pressed="true">🔊 Sound on</button>
+        <button id="leaveBtn" class="ghost sm hidden">Leave the game</button>
+      </div>
+      <div class="header-game-controls">
+        <div class="header-game-actions">
+          <button id="joinTop" class="primary hidden">Join the game</button>
+          <button id="guideBtn" class="primary header-guide">📖 Field Guide</button>
+          <div class="round-tag">Round <strong id="roundNum">1</strong></div>
+        </div>
+      </div>
     </div>
+    <h1 class="game-title"><img class="game-logo" src="images/game-logo.png" width="64" height="64" alt=""> <span>Mystery Monster</span></h1>
   </header>
 
   <section id="loading" class="notice"><p class="muted">Lighting the candles…</p></section>
@@ -102,18 +107,10 @@
     </section>
 
   <div id="game" class="hidden">
-    <section id="gameHostControls" class="stack hidden" aria-labelledby="hostControlsHead" style="margin-bottom:20px">
-      <h2 id="hostControlsHead">Host controls</h2>
-      <div class="row">
-        <button id="gameSkipTurn">Skip turn</button>
-        <button id="gameEnd">End game</button>
-        <button id="gameNew">Start a new game</button>
-      </div>
-    </section>
     <div class="grid">
       <section class="stack" aria-labelledby="roundHead">
         <h2 id="roundHead">This round</h2>
-        <p id="roundTimer" class="round-timer" role="timer" aria-label="Round time remaining"></p>
+        <p id="roundTimer" class="round-timer hidden" role="timer" aria-label="Round time remaining"><span class="round-timer-value" id="roundCountdown"></span><span class="round-timer-note" id="roundTimerNote"></span></p>
         <div id="monsterWho" class="who"></div>
         <div id="secretArea"></div>
         <div id="turnArea"></div>
@@ -134,12 +131,19 @@
         <ol class="board" id="board"></ol>
         <div class="row" style="margin-top:12px">
           <button id="joinBoard" class="primary hidden">Join the game</button>
-          <button id="leaveBtn" class="ghost hidden">Leave the game</button>
         </div>
         <div class="log" id="log"></div>
       </section>
     </div>
 
+    <section id="gameHostControls" class="stack hidden" aria-labelledby="hostControlsHead" style="margin-top:20px">
+      <h2 id="hostControlsHead">Host controls</h2>
+      <div class="row">
+        <button id="gameSkipTurn">Skip turn</button>
+        <button id="gameEnd">End game</button>
+        <button id="gameNew">Start a new game</button>
+      </div>
+    </section>
 
   </div>
 </div>
