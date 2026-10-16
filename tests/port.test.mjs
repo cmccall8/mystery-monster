@@ -17,16 +17,29 @@ for (const key of ['MONSTER_INFO', 'MONSTER_STATS', 'TRAIT_LABELS', 'TRAIT_WORDS
     assert.deepEqual(monsters[key], JSON.parse(JSON.stringify(vm.runInNewContext(`(${dataDeclaration(key)})`))));
   });
 }
-test('all 56 extracted JPEGs match the embedded originals byte for byte', async () => {
+test('extracted JPEGs match embedded originals except custom poster overrides', async () => {
   const maps = pictureMaps(reference);
+  assert.equal(monsters.MONSTER_POSTERS.Dracula, 'images/posters/dracula-full.jpg');
+  assert.equal(monsters.MONSTER_POSTERS.Kelpie, 'images/posters/kelpie.jpg');
+  assert.equal(monsters.MONSTER_POSTERS.Doppelgänger, 'images/posters/changeling.jpg');
+  assert.equal(monsters.MONSTER_POSTERS.Changeling, 'images/posters/doppelganger.jpg');
+  assert.equal(monsters.MONSTER_PICS.Changeling, 'images/portraits/changeling.jpg');
+  assert.equal(monsters.MONSTER_PICS.Kelpie, 'images/portraits/kelpie.jpg');
   for (const [key, map] of Object.entries(maps)) {
     assert.equal(Object.keys(map).length, 28);
-    assert.deepEqual(Object.keys(monsters[key]), Object.keys(map));
+    assert.deepEqual(Object.keys(monsters[key]).slice(0, Object.keys(map).length), Object.keys(map));
     for (const [name, uri] of Object.entries(map)) {
       const bytes = await readFile(new URL(monsters[key][name], root));
-      assert.deepEqual(bytes, Buffer.from(uri.split(',')[1], 'base64'), name);
+      if (key !== 'MONSTER_POSTERS' || !['Dracula', 'Doppelgänger'].includes(name)) {
+        assert.deepEqual(bytes, Buffer.from(uri.split(',')[1], 'base64'), name);
+      }
       assert.equal(bytes.readUInt16BE(0), 0xffd8);
       assert.equal(bytes.readUInt16BE(bytes.length - 2), 0xffd9);
+    }
+    for (const [name, path] of Object.entries(monsters[key])) {
+      const bytes = await readFile(new URL(path, root));
+      assert.equal(bytes.readUInt16BE(0), 0xffd8, `${key}.${name} JPEG start`);
+      assert.equal(bytes.readUInt16BE(bytes.length - 2), 0xffd9, `${key}.${name} JPEG end`);
     }
   }
 });
