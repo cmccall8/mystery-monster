@@ -43,11 +43,22 @@ const startTimer = () => ({ roundDeadline: timerMinutes() ? Date.now() + timerMi
 let expiringRound = null;
 function updateTimer() {
   if (!S) return;
-  if (S.gameResult) { $("roundTimer").textContent = "Game over"; return; }
+  const timer = $("roundTimer");
+  const countdownText = $("roundCountdown");
+  const noteText = $("roundTimerNote");
+  const setTimerText = (countdown, note = "") => {
+    countdownText.textContent = countdown;
+    noteText.textContent = note;
+    const fullText = [countdown, note].filter(Boolean).join(" · ");
+    timer.title = fullText;
+    timer.setAttribute("aria-label", `Round time remaining: ${fullText}`);
+  };
+  if (S.gameResult) { setTimerText("Game over"); return; }
   const minutes = timerMinutes();
   const remaining = S.roundDeadline ? Math.max(0, Math.ceil((S.roundDeadline - Date.now()) / 1000)) : minutes * 60;
-  $("roundTimer").textContent = !minutes ? "Casual · No timer" : `${DIFFICULTIES[difficulty()][0]} · ${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}${!S.drawn ? " · Starts when the monster is drawn" : ""}`;
-  $("roundTimer").classList.toggle("timer-low", !!minutes && !!S.drawn && remaining <= 30);
+  const countdown = `${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}`;
+  setTimerText(minutes ? countdown : "No timer", minutes && !S.drawn ? "Starts when the monster is drawn" : "");
+  timer.classList.toggle("timer-low", !!minutes && !!S.drawn && remaining <= 30);
   if (timeExpired()) {
     const key = `${S.gameId}:${S.round}`;
     if (expiringRound !== key) {
@@ -65,6 +76,7 @@ let S = null, stateLoaded = false;
 let monsters = DEFAULT_MONSTERS;
 let secret = null;
 let showSecret = false;
+let secretStatsOpenFor = "";
 let profiles = {};
 let backfilled = -1;
 let renderSeq = 0;
@@ -229,8 +241,14 @@ let requestedRoom = new URL(location.href).searchParams.get("room") || "";
 $("displayName").value = savedPreference("mm-name") || "";
 $("roomCode").value = requestedRoom || savedPreference("mm-room") || "";
 
+function setSetupHeader(hidden) {
+  $("guideBtn").classList.toggle("hidden", hidden);
+  document.querySelector(".round-tag").classList.toggle("hidden", hidden);
+  $("roundTimer").classList.toggle("hidden", hidden);
+}
 function showEntry() {
   $("loading").classList.add("hidden");
+  setSetupHeader(true);
   $("roomEntry").classList.remove("hidden");
   $("roomChoices").classList.toggle("hidden", !!requestedRoom);
   $("inviteJoin").classList.toggle("hidden", !requestedRoom);
@@ -281,6 +299,8 @@ async function enterRoom(create = false) {
 $("roomForm").onsubmit = e => { e.preventDefault(); enterRoom(); };
 function showSetup() {
   setupOpen = true;
+  setSetupHeader(true);
+  $("roomEntry").classList.add("hidden");
   $("hostPanel").classList.remove("hidden");
   $("roomChoices").classList.add("hidden");
   $("game").classList.add("hidden");
@@ -294,7 +314,6 @@ function closeSetup() {
   if (S) render(); else showEntry();
 }
 $("createRoom").onclick = () => { if ($("roomForm").reportValidity()) showSetup(); };
-$("roomSetupBtn").onclick = showSetup;
 $("finishSetup").onclick = () => S ? closeSetup() : enterRoom(true);
 $("cancelSetup").onclick = closeSetup;
 $("copyInvite").onclick = async () => {
@@ -354,6 +373,7 @@ async function render() {
   if (seq !== renderSeq) return;
   $("loading").classList.add("hidden");
   $("game").classList.toggle("hidden", setupOpen);
+  setSetupHeader(setupOpen);
 
   const st = S || freshState();
   $("roundNum").textContent = `${st.round} of ${roundPlan(st).total}`;
@@ -362,7 +382,6 @@ async function render() {
   $("joinTop").classList.toggle("hidden", !canJoin);
   $("joinBoard").classList.toggle("hidden", !canJoin);
   $("leaveBtn").classList.toggle("hidden", !joined());
-  $("roomSetupBtn").classList.toggle("hidden", !isHost);
   $("gameHostControls").classList.toggle("hidden", !isHost);
   $("gameSkipTurn").disabled = !!S?.gameResult || !currentAsker();
   $("gameEnd").disabled = !!S?.gameResult;
@@ -389,13 +408,16 @@ async function render() {
     } else {
       const hideable = forGuest || hostRun();
       const blur = hideable && !showSecret;
+      const stats = statsHtml(nm);
+      const statsKey = `${st.gameId}:${st.round}:${mId}:${nm}`;
       sa.innerHTML = `<div class="secret"><p class="muted">${forGuest ? `${esc(nameOf(mId))}'s monster` : "Your secret monster"}</p>
         <div class="secret-body ${blur ? "blurwrap" : ""}"><div class="secret-pic" aria-hidden="true">${artHtml(nm)}</div>
-          <div><span class="name">${esc(nm)}</span><p class="desc">${esc(info(nm).desc)}</p>${statsHtml(nm)}</div></div>
+          <div><span class="name">${esc(nm)}</span><p class="desc">${esc(info(nm).desc)}</p>${stats ? `<details class="secret-more" ${secretStatsOpenFor === statsKey ? "open" : ""}><summary>Read more</summary>${stats}</details>` : ""}</div></div>
         <div class="row">
           ${hideable ? `<button data-act="peek">${showSecret ? "Hide" : "Show"}</button>` : ""}${forGuest ? `<button data-act="copy">Copy</button>` : ""}
-          ${st.questions === 0 ? `<button class="ghost" data-act="draw">Draw again</button>` : ""}
         </div></div>`;
+      const statsDisclosure = sa.querySelector(".secret-more");
+      if (statsDisclosure) statsDisclosure.addEventListener("toggle", () => { secretStatsOpenFor = statsDisclosure.open ? statsKey : ""; });
     }
   } else if (mId) {
     sa.innerHTML = `<p class="muted">${st.drawn ? `${esc(nameOf(mId))} has a secret monster. Start asking!` : `Waiting for ${esc(nameOf(mId))} to draw a monster…`}</p>`;
@@ -424,7 +446,7 @@ async function render() {
   const clues = st.clues || [];
   $("clues").innerHTML = clues.map(c => `<li><span class="cn">${c.ans === "wrong" ? "✗" : "Q" + c.n}</span>
     <span class="ctext">${esc(nameOf(c.by))}${c.ans === "wrong" ? (c.guess ? ` guessed ${esc(c.guess)}` : " made a wrong guess") : c.text ? `: ${esc(c.text)}` : " asked"}</span>
-    <span class="ans ${c.ans}">${c.ans === "yes" ? "Yes" : c.ans === "no" ? "No" : "Wrong"}</span></li>`).join("");
+    <span class="ans ${c.ans}">${c.ans === "yes" ? "Yes" : c.ans === "no" ? "No" : c.ans === "sometimes" ? "Sometimes" : "Wrong"}</span></li>`).join("");
   $("cluesWrap").classList.toggle("hidden", !clues.length);
   const cl = $("clues"); cl.scrollTop = cl.scrollHeight;
 
@@ -555,7 +577,7 @@ function turnHtml(st, mId, asker, mq) {
   if (pend && pend.type === "ask") {
     const by = esc(nameOf(pend.by)), q = pend.text ? `“${esc(pend.text)}”` : "";
     if (canAnswer) return `<div class="turnbox hot"><p><strong>${by}</strong> asks${q ? ":" : " a question out loud."}</p>${q ? `<p class="qtext">${q}</p>` : ""}
-      <div class="row big"><button class="yes" data-t="yes">Yes</button><button class="no" data-t="no">No</button></div>
+      <div class="row big"><button class="yes" data-t="yes">Yes</button><button class="no" data-t="no">No</button><button class="sometimes" data-t="sometimes">Sometimes</button></div>
       <p class="muted">Say your answer out loud too, then tap it.</p></div>`;
     return `<div class="turnbox"><p><strong>${by}</strong> is asking${q ? `: <span class="qtext">${q}</span>` : " a question out loud."}</p>
       <p class="muted">Waiting for ${mName} to answer…</p>${pend.by === me || isHost ? `<div><button class="ghost" data-t="cancel">Cancel question</button></div>` : ""}</div>`;
@@ -572,9 +594,9 @@ function turnHtml(st, mId, asker, mq) {
   if (canAnswer && !(actFor && turnMode === "guess")) {
     const marks = proxy ? `<div class="row"><button data-t="right">✓ Guessed it</button><button data-t="wrongq">✗ Wrong guess</button>${actFor ? `<button class="ghost" data-t="guess">📖 Pick their guess</button>` : ""}</div>` : "";
     if (!out) return `<div class="turnbox hot"><p><strong>${aName}</strong> ${proxy ? "is up. They ask a question or make a guess out loud." : "is asking a question out loud."}</p>
-      <div class="row big"><button class="yes" data-t="yes">Yes</button><button class="no" data-t="no">No</button></div>
+      <div class="row big"><button class="yes" data-t="yes">Yes</button><button class="no" data-t="no">No</button><button class="sometimes" data-t="sometimes">Sometimes</button></div>
       ${marks}
-      <p class="muted">${proxy ? "Tap Yes or No for a question, or mark their guess." : "Answer out loud too, then tap. If they guess instead, the app checks it for you."}</p></div>`;
+      <p class="muted">${proxy ? "Tap Yes, No, or Sometimes for a question, or mark their guess." : "Answer out loud too, then tap. If they guess instead, the app checks it for you."}</p></div>`;
     return `<div class="turnbox hot"><p><strong>${aName}</strong> gets a final guess.</p>${marks || `<p class="muted">The app will check it for you.</p>`}</div>`;
   }
   if (!actFor) return `<div class="turnbox"><p class="turn">${aName} is up${out ? " for a final guess" : ""}.</p>
@@ -801,7 +823,7 @@ $("turnArea").addEventListener("click", e => {
   if (t === "pick") { submitGuess(b.dataset.name); return; }
   if (t === "pass") { if (actingAsker()) askConfirm(`Pass? ${nameOf(S.monsterId)} wins the round.`, "Pass").then(ok => { if (ok) endRound("stump"); }); return; }
   if (t === "cancel") { enqueue(() => stateRef().update({ pending: null })); return; }
-  if (t === "yes" || t === "no") { answer(t); return; }
+  if (t === "yes" || t === "no" || t === "sometimes") { answer(t); return; }
   if (isHost && S.pending && S.pending.type === "guess") {
     const p = S.pending;
     if (t === "mright") { resolvedGuesses.add(p.id); endRound("right", p.by); }
@@ -867,9 +889,10 @@ document.querySelector(".modeseg").addEventListener("click", e => {
 $("skipBtn").onclick = async () => { if (S && await askConfirm("Skip this round? Nobody gets points.", "Skip round")) endRound("skip"); };
 async function startNewGame() {
   if (!isHost || !S) return;
-  if (!(await askConfirm("Start a new game? Scores reset to zero. Players stay.", "Start new game"))) return;
-  const pl = {}; order().forEach(id => { pl[id] = { ...players()[id], score: 0 }; });
-  enqueue(() => stateRef().set({ ...freshState(pl, order()[0] || null), maxQ: maxQ(), hostMode: hostRun(), difficulty: difficulty(), totalRounds: S.totalRounds || DEFAULT_ROUNDS }));
+  if (!(await askConfirm("Return home to set up a new room? This room and its players will stay unchanged.", "Create a new room"))) return;
+  const home = new URL(location.href);
+  home.searchParams.delete("room");
+  location.assign(home.href);
 }
 $("newGameBtn").onclick = startNewGame;
 $("gameNew").onclick = startNewGame;
@@ -924,7 +947,6 @@ $("totalRounds").onchange = () => {
 let dismissedGameResult = null;
 function renderGameResult() {
   const result = S?.gameResult;
-  $("viewResults").classList.toggle("hidden", !result);
   if (!result || dismissedGameResult === S.gameId) {
     $("gameOver").classList.add("hidden");
     return;
@@ -940,4 +962,3 @@ function renderGameResult() {
   if ($("gameOver").classList.contains("hidden")) { $("gameOver").classList.remove("hidden"); $("winnerClose").focus(); }
 }
 $("winnerClose").onclick = () => { dismissedGameResult = S.gameId; $("gameOver").classList.add("hidden"); };
-$("viewResults").onclick = () => { dismissedGameResult = null; renderGameResult(); };
