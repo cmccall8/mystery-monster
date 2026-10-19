@@ -302,3 +302,14 @@ button.glow.primary { color: var(--pumpkin-ink); }
   .guide-timer .round-timer-value { font-size: 1.35rem; }
 }
 .ans.sometimes { color: var(--flame); }
+.instructions { width: min(680px, calc(100% - 32px)); max-height: calc(100dvh - 48px); overflow-y: auto; padding: 0; color: var(--ink); background: var(--surface); border: 1px solid var(--pumpkin); border-radius: 14px; box-shadow: 0 20px 60px rgba(0,0,0,.6); }
+.instructions::backdrop { background: rgba(5,3,8,.85); }
+.instructions-head { display: flex; align-items: flex-start; gap: 16px; justify-content: space-between; padding: 20px 20px 14px; border-bottom: 1px solid var(--line); }
+.instructions-head h2 { margin: 0; color: var(--flame); }
+.instructions-head button { flex: none; }
+.instructions-body { padding: 20px; }
+.instructions-body ol { padding-left: 24px; margin: 18px 0; }
+.instructions-body li + li { margin-top: 14px; }
+.instructions-body h3 { font-size: 1.1rem; color: var(--flame); margin: 20px 0 6px; }
+.instructions-footer { padding: 0 20px 20px; }
+body:has(.instructions[open]) { overflow: hidden; }

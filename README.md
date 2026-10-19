@@ -31,6 +31,7 @@ Do not push changes during a live game. Players should use the published site ra
 
 ## Play
 
+- Open **How to play** on the home or room setup screen for the rules, scoring, timer options, and shared-screen instructions. Close it to return to your setup without changing your selections.
 - Enter your display name and choose **Create a game**. You become that room's host and its first monster.
 - Use **Copy invite link** in the header and paste it into your Zoom chat. Players open the link, enter a name, and join. They can also open the site and enter the six-character room code.
 - Draw your secret monster on your own device. Keep that screen private. Players take turns asking questions out loud; the monster taps **Yes** or **No**. Each answer extinguishes a candle.

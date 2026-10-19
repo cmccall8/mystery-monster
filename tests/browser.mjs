@@ -111,6 +111,35 @@ async function guidePick(page, name) {
   await click(page, '[data-g="pick"]'); await confirm(page);
 }
 try {
+  const helpCtx = await context({ viewport: { width: 390, height: 844 } });
+  const help = await helpCtx.newPage(); await help.goto(origin);
+  await help.locator('#roomEntry:not(.hidden)').waitFor();
+  await help.fill('#displayName', 'Pumpkin');
+  await click(help, '#howToPlay');
+  assert.equal(await help.locator('#instructions').evaluate(dialog => dialog.matches(':modal')), true);
+  assert.equal(await help.evaluate(() => document.getElementById('instructions').contains(document.activeElement)), true);
+  await help.keyboard.press('Escape');
+  assert.equal(await help.locator('#instructions').isVisible(), false);
+  assert.equal(await help.locator('#howToPlay').evaluate(button => document.activeElement === button), true);
+  await click(help, '#howToPlay');
+  await help.mouse.click(1, 1);
+  assert.equal(await help.locator('#instructions').isVisible(), false);
+  await help.locator('#createRoom').click();
+  await help.fill('#totalRounds', '12'); await help.selectOption('#difficulty', 'hard');
+  await click(help, '#howToPlay');
+  const box = await help.locator('#instructions').boundingBox();
+  assert.ok(box.x >= 0 && box.x + box.width <= 390);
+  await help.locator('.instructions-footer button').click();
+  assert.equal(await help.locator('#instructions').isVisible(), false);
+  assert.equal(await help.inputValue('#totalRounds'), '12');
+  assert.equal(await help.inputValue('#difficulty'), 'hard');
+  await click(help, '#howToPlay'); await click(help, '#instructionsClose');
+  assert.equal(await help.locator('#instructions').isVisible(), false);
+  assert.equal(docs.size, 0, 'Reading instructions must not create or join a room');
+  passed('instructions open from home and setup, fit mobile, restore focus, close by Escape/backdrop/buttons, and preserve setup');
+  await helpCtx.close();
+
+  if (process.env.MM_INSTRUCTIONS_ONLY !== '1') {
   // Verify missing configuration reaches a useful failure panel.
   // Supply a placeholder fixture without changing the saved project settings.
   const prod = await context();
@@ -511,6 +540,7 @@ try {
   assert.equal(nextState().gameResult.endedEarly, true);
   passed('host controls skip turns and end games, then Start a new game returns home');
 
+  }
   }
   assert.deepEqual(errors, []); assert.deepEqual(brokenImages, []);
   console.log(`${checks} browser checks passed; no uncaught errors or missing requested images.`);

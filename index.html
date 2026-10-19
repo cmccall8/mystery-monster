@@ -18,6 +18,7 @@
       <div class="header-utility-controls">
         <span id="inviteArea" class="row hidden"><span>Room <strong id="inviteCode"></strong></span><button id="copyInvite" class="ghost sm">Copy invite link</button></span>
         <button id="soundBtn" class="ghost sm" aria-pressed="true">🔊 Sound on</button>
+        <button id="howToPlay" class="ghost sm" type="button" aria-haspopup="dialog" aria-controls="instructions">How to play</button>
         <button id="leaveBtn" class="ghost sm hidden">Leave the game</button>
       </div>
       <div class="header-game-controls">
@@ -194,6 +195,31 @@
   </div>
 </div>
 
+<dialog id="instructions" class="instructions" aria-labelledby="instructionsTitle">
+  <div class="instructions-head">
+    <h2 id="instructionsTitle">How to play Mystery Monster</h2>
+    <button id="instructionsClose" class="ghost" type="button" aria-label="Close instructions" autofocus>✕</button>
+  </div>
+  <div class="instructions-body">
+    <p>One player becomes a secret monster. Everyone else asks questions and tries to uncover its identity before the candles or time run out.</p>
+    <ol>
+      <li><strong>Gather your players.</strong> Enter your name and choose <b>Create a game</b>. The host chooses the round count, game mode, and questions per round, then creates the room. Share the invite link or room code so everyone can join.</li>
+      <li><strong>Draw a secret monster.</strong> The monster player draws on their own device and keeps the card private. Their stats help them answer questions. The round timer starts when the monster is drawn.</li>
+      <li><strong>Ask questions on your turn.</strong> Ask a yes/no question out loud, such as “Can you fly?” The monster answers <b>Yes</b>, <b>No</b>, or <b>Sometimes</b>. Each answer uses one candle. Follow the turn indicator and the clues already collected.</li>
+      <li><strong>Use the Field Guide.</strong> Open monster pages to read their descriptions and stats. Tap <b>Rule out</b> to cross off possibilities in your own view; <b>Undo rule out</b> restores them. Your marks reset each round. The timer stays visible while the guide is open.</li>
+      <li><strong>Make a guess.</strong> On your turn, choose <b>Make a guess</b>, open a monster’s page, select <b>Guess this monster</b>, and confirm <b>Lock it in</b>. A correct guess earns <b>+2 points</b> and ends the round. A wrong guess costs <b>1 point</b> and one candle; that monster is crossed out for everyone.</li>
+      <li><strong>Finish the round.</strong> When all candles are out, the next guesser gets one final guess or can <b>Pass</b>. A failed final guess, a pass, or time running out gives the monster <b>+3 points</b>. The monster role moves to another player for the next round.</li>
+      <li><strong>Win the game.</strong> After the final round, the highest score wins. Tied players share the win. The game includes enough rounds for everyone to take a turn as the monster.</li>
+    </ol>
+    <h3>Choose your pace</h3>
+    <p><b>Casual:</b> unlimited time · <b>Easy:</b> 10 minutes · <b>Normal:</b> 7 minutes · <b>Hard:</b> 5 minutes · <b>Extreme:</b> 2 minutes per round.</p>
+    <h3>Playing on one shared screen?</h3>
+    <p>Choose <b>I run it from my screen</b> during setup. The host operates the turn and guess buttons for everyone. Keep the secret card blurred until it is safe to show, or let the monster pick privately from the Field Guide.</p>
+  </div>
+  <form method="dialog" class="instructions-footer"><button class="primary">Got it — let’s play</button></form>
+</dialog>
+
+<script type="module" src="js/instructions.js"></script>
 <script type="module" src="js/app.js"></script>
 </body>
 </html>
