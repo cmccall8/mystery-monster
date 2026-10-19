@@ -43,6 +43,22 @@ test('extracted JPEGs match embedded originals except custom poster overrides', 
     }
   }
 });
+test('browser image variants exist, preserve monster mappings, and reduce download bytes', async () => {
+  let sourceBytes = 0, webBytes = 0;
+  for (const [originals, optimized] of [[monsters.MONSTER_PICS, monsters.MONSTER_WEB_PICS], [monsters.MONSTER_POSTERS, monsters.MONSTER_WEB_POSTERS]]) {
+    assert.deepEqual(Object.keys(optimized), Object.keys(originals));
+    for (const [name, path] of Object.entries(originals)) {
+      assert.equal(optimized[name], path.replace('images/', 'images/optimized/').replace(/\.jpg$/, '.webp'));
+      const original = await readFile(new URL(path, root));
+      const web = await readFile(new URL(optimized[name], root));
+      assert.equal(web.toString('ascii', 0, 4), 'RIFF');
+      assert.equal(web.toString('ascii', 8, 12), 'WEBP');
+      sourceBytes += original.length;
+      webBytes += web.length;
+    }
+  }
+  assert.ok(webBytes < sourceBytes * 0.5, `Browser images use ${webBytes} of ${sourceBytes} original bytes`);
+});
 test('slug examples and non-ASCII accents', () => {
   assert.equal(slug("Frankenstein's monster"), 'frankensteins-monster');
   assert.equal(slug("Will-o'-the-wisp"), 'will-o-the-wisp');

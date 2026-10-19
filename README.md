@@ -63,6 +63,18 @@ The app loads the pinned Firebase **10.14.1** ES modules from `www.gstatic.com` 
 
 The host can also add a name and description in Room setup; these room-specific additions use an emoji unless the site includes art for that exact name.
 
+### Optimize artwork for loading
+
+The game serves WebP copies from `images/optimized/`: portraits up to 192 × 192 pixels and posters up to 680 × 1020 pixels, with the original aspect ratio preserved. Field Guide thumbnails load as they approach the visible area. Original JPEG and PNG artwork is retained for editing and extraction checks.
+
+After adding or changing artwork, regenerate the optimized copies before publishing. This development step needs Python 3 and Pillow (`python3 -m pip install Pillow`):
+
+```sh
+python3 scripts/optimize-images.py
+```
+
+Commit the generated `images/optimized/` files along with the artwork changes. The deployed game needs no Python, image service, or build step.
+
 ## Reference and checks
 
 The original game is preserved in [`reference/mystery-monster-scorekeeper.html`](reference/mystery-monster-scorekeeper.html). The port retains its rendering, rules of play, styling, generated sounds, and monster data while replacing the old hosting integration.

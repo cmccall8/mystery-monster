@@ -58,7 +58,7 @@ const server = createServer(async (req, res) => {
     if (path.endsWith('/js/store.js') && req.headers['x-production'] !== 'true') {
       data = store.slice(0, store.indexOf('export async function connect()')) + testConnect;
     }
-    res.setHeader('Content-Type', ({ '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.jpg': 'image/jpeg', '.png': 'image/png', '.ico': 'image/x-icon' })[extname(path)] || 'text/plain');
+    res.setHeader('Content-Type', ({ '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.jpg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.ico': 'image/x-icon' })[extname(path)] || 'text/plain');
     res.end(data);
   } catch { res.writeHead(404).end('Not found'); }
 });
@@ -83,7 +83,7 @@ async function context(options = {}) {
   await ctx.route('https://**', route => route.abort());
   ctx.on('page', page => {
     page.on('pageerror', e => errors.push(e.message));
-    page.on('response', r => { if (r.url().endsWith('.jpg') && r.status() !== 200) brokenImages.push(r.url()); });
+    page.on('response', r => { if (/\.(?:jpg|png|webp)$/.test(new URL(r.url()).pathname) && r.status() !== 200) brokenImages.push(r.url()); });
   });
   return ctx;
 }
@@ -198,6 +198,11 @@ try {
   passed('Field Guide opening plays page-turn audio and respects mute');
   const names = await player.locator('.gentry .gname').allTextContents();
   assert.equal(names.length, 48);
+  const thumbnail = player.locator('.gentry img').first();
+  assert.equal(await thumbnail.getAttribute('loading'), 'lazy');
+  assert.match(await thumbnail.getAttribute('src'), /^images\/optimized\/portraits\/.*\.webp$/);
+  await thumbnail.evaluate(img => img.decode());
+  assert.ok(await thumbnail.evaluate(img => img.naturalWidth > 0 && img.naturalWidth <= 192));
   const personalName = names.find(n => n !== secretName);
   const personalButton = `[data-g="rule-out"][data-name="${personalName}"]`;
   const personalEntry = `.gentry[data-name="${personalName}"]`;
@@ -218,7 +223,7 @@ try {
   await click(player, '.guide-top [data-g=index]');
   await click(player, `[data-g="rule-out"][data-name="${secretName}"]`);
   assert.equal(await player.locator('#guideTimer').isVisible(), true);
-  assert.equal(await player.locator('#guideCountdown').textContent(), await player.locator('#roundCountdown').textContent());
+  assert.equal(await player.evaluate(() => document.getElementById('guideCountdown').textContent === document.getElementById('roundCountdown').textContent), true);
   for (const viewport of [{width: 390, height: 844}, {width: 1280, height: 900}]) {
     await player.setViewportSize(viewport);
     const timerBox = await player.locator('#guideTimer').boundingBox();
@@ -230,6 +235,8 @@ try {
   passed('personal rule-outs are private, reversible, survive reopening, and timer is visible on mobile and desktop');
   await click(player, '[data-g=go][data-name="Dracula"]');
   await player.locator('.leaf.text .stats').waitFor();
+  await player.locator('.leaf.art img').evaluate(img => img.decode());
+  assert.ok(await player.locator('.leaf.art img').evaluate(img => img.naturalWidth > 0 && img.naturalWidth <= 680));
   assert.equal(await player.locator('.guide-top').evaluate(e => getComputedStyle(e).position), 'sticky');
   await click(player, '.guide-top [data-g=go][aria-label="Next monster"]');
   await click(player, '.guide-top [data-g=index]');
@@ -272,7 +279,7 @@ try {
     await click(host, '[data-g=go][data-name="Dracula"]');
     docs.set(roomPath, { ...state(), roundDeadline: Date.now() + 20000 });
     await wait(async () => (await host.locator('#guideTimer').getAttribute('class')).includes('timer-low'));
-    assert.equal(await host.locator('#guideCountdown').textContent(), await host.locator('#roundCountdown').textContent());
+    assert.equal(await host.evaluate(() => document.getElementById('guideCountdown').textContent === document.getElementById('roundCountdown').textContent), true);
     docs.set(roomPath, { ...state(), difficulty: 'casual', roundDeadline: null });
     await wait(async () => await host.locator('#guideCountdown').textContent() === 'No timer');
     assert.doesNotMatch(await host.locator('#guideTimer').getAttribute('class'), /timer-low/);

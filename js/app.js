@@ -1,4 +1,4 @@
-import { MONSTER_INFO, MONSTER_PICS, MONSTER_POSTERS, MONSTER_STATS, TRAIT_LABELS, TRAIT_WORDS, ALIASES } from "./monsters.js";
+import { MONSTER_INFO, MONSTER_WEB_PICS as MONSTER_PICS, MONSTER_WEB_POSTERS as MONSTER_POSTERS, MONSTER_STATS, TRAIT_LABELS, TRAIT_WORDS, ALIASES } from "./monsters.js";
 import { DEFAULT_ROUNDS, roundPlan } from "./rounds.js";
 import { connect, savedPreference } from "./store.js";
 
@@ -30,7 +30,7 @@ function info(name) {
   const d = MONSTER_INFO[name];
   return { emoji: d ? d[0] : "👹", pic: MONSTER_PICS[name] || null, poster: MONSTER_POSTERS[name] || null, desc: customDescs[name] || (d ? d[1] : "A mystery monster added by the host.") };
 }
-function artHtml(name) { const i = info(name); return i.pic ? `<img src="${i.pic}" alt="">` : esc(i.emoji); }
+function artHtml(name, lazy = false) { const i = info(name); return i.pic ? `<img src="${i.pic}" alt="" width="192" height="192" decoding="async"${lazy ? ' loading="lazy"' : ""}>` : esc(i.emoji); }
 let seenLast, revealOpen = false, showGallery = false;
 let turnMode = "choose", turnModeFor = null, lastTurnHtml = null, focusTurn = false;
 const resolvedGuesses = new Set();
@@ -489,7 +489,7 @@ async function render() {
     k.textContent = lr.outcome === "right" ? `${nameOf(lr.winnerId)} guessed it! +2` : `${lr.timedOut ? "Time’s up!" : "Nobody got it!"} ${nameOf(lr.monsterId)} gets +3`;
     const ra = $("revealArt");
     ra.classList.toggle("poster", !!(inf && inf.poster));
-    ra.innerHTML = inf ? (inf.poster ? `<img src="${inf.poster}" alt="">` : artHtml(nm)) : "❔";
+    ra.innerHTML = inf ? (inf.poster ? `<img src="${inf.poster}" alt="" decoding="async">` : artHtml(nm)) : "❔";
     $("revealHead").textContent = nm || (lr.selfPick ? "A mystery!" : "Revealing…");
     $("revealDesc").textContent = inf ? inf.desc : lr.selfPick ? `Ask ${nameOf(lr.monsterId)} to reveal what it was.` : "";
     $("revealMeta").textContent = `Round ${lr.round} monster: ${nameOf(lr.monsterId)}`;
@@ -734,7 +734,7 @@ function renderGuide() {
   let html;
   if (guideView) {
     const i = list.indexOf(guideView), m = guideView, inf = info(m), isOut = out.includes(m);
-    const art = inf.poster ? `<img src="${inf.poster}" alt="">` : inf.pic ? `<img src="${inf.pic}" alt="">` : `<span class="emoji">${esc(inf.emoji)}</span>`;
+    const art = inf.poster ? `<img src="${inf.poster}" alt="" decoding="async">` : inf.pic ? `<img src="${inf.pic}" alt="" decoding="async">` : `<span class="emoji">${esc(inf.emoji)}</span>`;
     html = `<div class="guide-top">
         <button class="ghost" data-g="index">◂ Back to all monsters</button>
         <span class="row">
@@ -763,7 +763,7 @@ function renderGuide() {
     html = `<p class="intro">${list.length} monsters. ${act ? "Open a monster's page to choose it." : "Tap one to read its page."}${canRuleOut() ? " Rule out monsters in your view only; your marks reset next round." : ""}</p>
       <div class="gindex">${list.map(m => { const isOut = out.includes(m);
         const marked = personalEliminations.has(m);
-        return `<div class="gentry-wrap"><button class="gentry ${isOut || marked ? "out" : ""}" data-g="go" data-name="${esc(m)}"><span class="gpic" aria-hidden="true">${artHtml(m)}</span><span class="gname">${esc(m)}</span>${isOut ? '<span class="gx">Wrong</span>' : marked ? '<span class="gx">Ruled out by you</span>' : ""}</button>${canRuleOut() && !isOut ? ruleOutButton(m) : ""}</div>`; }).join("")}</div>`;
+        return `<div class="gentry-wrap"><button class="gentry ${isOut || marked ? "out" : ""}" data-g="go" data-name="${esc(m)}"><span class="gpic" aria-hidden="true">${artHtml(m, true)}</span><span class="gname">${esc(m)}</span>${isOut ? '<span class="gx">Wrong</span>' : marked ? '<span class="gx">Ruled out by you</span>' : ""}</button>${canRuleOut() && !isOut ? ruleOutButton(m) : ""}</div>`; }).join("")}</div>`;
   }
   if (html === lastGuideHtml) return;
   const page = $("guidePage"), viewChanged = guideView !== lastGuideView, keep = page.scrollTop;
