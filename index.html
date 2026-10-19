@@ -149,6 +149,7 @@
 </div>
 
 <div id="guide" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="guideTitle">
+  <div class="guide-layout">
   <div class="book">
     <div class="book-head">
       <h2 id="guideTitle">Monster Field Guide</h2>
@@ -156,6 +157,12 @@
     </div>
     <div class="book-banner hidden" id="guideBanner"></div>
     <div class="book-page" id="guidePage"></div>
+  </div>
+  <aside id="guideTimer" class="guide-timer round-timer hidden" role="timer" aria-label="Round time remaining">
+    <span class="guide-timer-label">Time remaining</span>
+    <strong id="guideCountdown" class="round-timer-value"></strong>
+    <span id="guideTimerNote" class="round-timer-note"></span>
+  </aside>
   </div>
 </div>
 

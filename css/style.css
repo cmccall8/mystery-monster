@@ -285,4 +285,20 @@ button.glow.primary { color: var(--pumpkin-ink); }
   .header-game-controls .round-tag strong { font-size: .95rem; }
 }
 .row.big .sometimes { background: var(--wax); border-color: var(--wax); color: var(--pumpkin-ink); min-width: 7rem; padding-inline: 12px; }
+.guide-layout { display: flex; align-items: flex-start; justify-content: center; gap: 20px; width: min(1120px, 100%); min-width: 0; }
+.guide-layout .book { flex: 1; min-width: 0; }
+.guide-timer.round-timer { flex: 0 0 150px; display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 18px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); text-align: center; }
+.guide-timer-label { color: var(--muted); font-size: .85rem; font-weight: 500; }
+.gentry-wrap { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.gentry-wrap .gentry { flex: 1; width: 100%; }
+.gentry.out .gpic { filter: grayscale(1); }
+.personally-out { text-decoration: line-through; opacity: .6; }
+.book-page .rule-out { font-size: .85rem; margin-bottom: 8px; }
+.book-page .rule-out[aria-pressed="true"] { border-color: #7a2e12; }
+@media (max-width: 760px) {
+  .guide-layout { flex-direction: column-reverse; gap: 12px; }
+  .guide-layout .book { flex: none; width: 100%; height: min(76vh, 780px); }
+  .guide-timer.round-timer { flex: none; width: 100%; flex-direction: row; justify-content: center; padding: 8px 12px; gap: 10px; }
+  .guide-timer .round-timer-value { font-size: 1.35rem; }
+}
 .ans.sometimes { color: var(--flame); }

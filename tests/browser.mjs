@@ -198,6 +198,36 @@ try {
   passed('Field Guide opening plays page-turn audio and respects mute');
   const names = await player.locator('.gentry .gname').allTextContents();
   assert.equal(names.length, 48);
+  const personalName = names.find(n => n !== secretName);
+  const personalButton = `[data-g="rule-out"][data-name="${personalName}"]`;
+  const personalEntry = `.gentry[data-name="${personalName}"]`;
+  const beforeNotes = structuredClone([...docs]);
+  await click(player, personalButton);
+  assert.equal(await player.locator(personalButton).getAttribute('aria-pressed'), 'true');
+  assert.match(await player.locator(personalEntry).getAttribute('class'), /out/);
+  await click(host, '#guideBtn');
+  assert.doesNotMatch(await host.locator(personalEntry).getAttribute('class'), /out/);
+  assert.deepEqual([...docs], beforeNotes, 'Personal eliminations must not write to Firebase');
+  await click(host, '#guideClose');
+  await click(player, '#guideClose'); await click(player, '#guideBtn');
+  assert.equal(await player.locator(personalButton).getAttribute('aria-pressed'), 'true');
+  await click(player, `[data-g="go"][data-name="${personalName}"]`);
+  assert.equal(await player.locator('.personally-out').textContent(), personalName);
+  await click(player, personalButton);
+  assert.equal(await player.locator('.personally-out').count(), 0);
+  await click(player, '.guide-top [data-g=index]');
+  await click(player, `[data-g="rule-out"][data-name="${secretName}"]`);
+  assert.equal(await player.locator('#guideTimer').isVisible(), true);
+  assert.equal(await player.locator('#guideCountdown').textContent(), await player.locator('#roundCountdown').textContent());
+  for (const viewport of [{width: 390, height: 844}, {width: 1280, height: 900}]) {
+    await player.setViewportSize(viewport);
+    const timerBox = await player.locator('#guideTimer').boundingBox();
+    const bookBox = await player.locator('.book').boundingBox();
+    assert.ok(timerBox.x >= 0 && timerBox.x + timerBox.width <= viewport.width);
+    assert.ok(viewport.width > 760 ? timerBox.x >= bookBox.x + bookBox.width : timerBox.y + timerBox.height <= bookBox.y);
+  }
+  await player.setViewportSize({width: 390, height: 844});
+  passed('personal rule-outs are private, reversible, survive reopening, and timer is visible on mobile and desktop');
   await click(player, '[data-g=go][data-name="Dracula"]');
   await player.locator('.leaf.text .stats').waitFor();
   assert.equal(await player.locator('.guide-top').evaluate(e => getComputedStyle(e).position), 'sticky');
@@ -218,7 +248,9 @@ try {
   await click(player, '#inviteJoin button[type=submit]');
   await player.locator('#game:not(.hidden)').waitFor();
   assert.equal(state().players[playerId].score, -1);
-  await click(player, '[data-t=guess]'); await guidePick(player, secretName);
+  await click(player, '[data-t=guess]');
+  await click(player, `[data-g="rule-out"][data-name="${secretName}"]`);
+  await guidePick(player, secretName);
   await wait(() => state().round === 2);
   assert.equal(state().players[playerId].score, 1);
   await player.locator('#reveal:not(.hidden)').waitFor();
@@ -227,6 +259,25 @@ try {
   assert.match(await host.locator('#board').textContent(), /👑/);
   passed('refresh preserves identity/seat/score; correct guess +2, shared reveal, leader crown');
   await click(host, '#revealClose'); await click(player, '#revealClose');
+  await click(player, '#guideBtn');
+  assert.equal(await player.locator('[data-g="rule-out"][aria-pressed="true"]').count(), 0);
+  assert.equal(await player.locator('.gentry.out').count(), 0);
+  await click(player, '#guideClose');
+  passed('personal and shared eliminations reset next round');
+
+  if (process.env.MM_FIELD_GUIDE_ONLY === '1') {
+    await click(host, '#guideBtn');
+    docs.set(roomPath, { ...state(), drawn: true, roundDeadline: Date.now() + 65000 });
+    await wait(async () => (await host.locator('#guideCountdown').textContent()).startsWith('1:'));
+    await click(host, '[data-g=go][data-name="Dracula"]');
+    docs.set(roomPath, { ...state(), roundDeadline: Date.now() + 20000 });
+    await wait(async () => (await host.locator('#guideTimer').getAttribute('class')).includes('timer-low'));
+    assert.equal(await host.locator('#guideCountdown').textContent(), await host.locator('#roundCountdown').textContent());
+    docs.set(roomPath, { ...state(), difficulty: 'casual', roundDeadline: null });
+    await wait(async () => await host.locator('#guideCountdown').textContent() === 'No timer');
+    assert.doesNotMatch(await host.locator('#guideTimer').getAttribute('class'), /timer-low/);
+    passed('guide countdown updates on monster pages, shows low time, and supports Casual mode');
+  } else {
 
   // Host manual fallback ends a round with no access to the monster's secret;
   // the monster device then backfills the reveal with the private name.
@@ -344,6 +395,9 @@ try {
   await click(other, '#finishSetup');
   await click(other, '[data-act=draw]'); await wait(() => timedState().drawn);
   assert.equal(timedState().roundDeadline, null);
+  await click(other, '#guideBtn');
+  assert.equal(await other.locator('#guideCountdown').textContent(), 'No timer');
+  await click(other, '#guideClose');
   passed('Normal default, all five mode settings, and Casual draws without a timer');
   await click(other, '#roomSetupBtn');
   assert.equal(await other.locator('#difficulty').isDisabled(), true);
@@ -363,10 +417,14 @@ try {
   await watcher.reload(); await click(watcher, '#inviteJoin button[type=submit]');
   assert.equal(timedState().roundDeadline, deadline);
   passed('shared Extreme deadline starts on draw and survives a player refresh');
+  await click(watcher, '#guideBtn');
   // Move the shared deadline forward for a real countdown without a three-minute test wait.
   docs.set(timedPath, { ...timedState(), roundDeadline: Date.now() + 2500 });
   await wait(async () => (await other.locator('#roundTimer').textContent()).includes('0:02'));
   await wait(async () => (await watcher.locator('#roundTimer').textContent()).includes('0:02'));
+  await wait(async () => await watcher.locator('#guideCountdown').textContent() === '0:02');
+  assert.match(await watcher.locator('#guideTimer').getAttribute('class'), /timer-low/);
+  await click(watcher, '#guideClose');
   await wait(() => timedState().round === 3);
   assert.equal(timedState().lastRound.timedOut, true);
   assert.equal(timedState().lastRound.outcome, 'stump');
@@ -446,6 +504,7 @@ try {
   assert.equal(nextState().gameResult.endedEarly, true);
   passed('host controls skip turns and end games, then Start a new game returns home');
 
+  }
   assert.deepEqual(errors, []); assert.deepEqual(brokenImages, []);
   console.log(`${checks} browser checks passed; no uncaught errors or missing requested images.`);
 } catch (error) { console.error('Browser errors:', errors); throw error; } finally { await browser.close(); await new Promise(r => server.close(r)); }

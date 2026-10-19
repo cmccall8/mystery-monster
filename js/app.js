@@ -52,13 +52,17 @@ function updateTimer() {
     const fullText = [countdown, note].filter(Boolean).join(" · ");
     timer.title = fullText;
     timer.setAttribute("aria-label", `Round time remaining: ${fullText}`);
+    $("guideCountdown").textContent = countdown;
+    $("guideTimerNote").textContent = note;
+    $("guideTimer").setAttribute("aria-label", `Round time remaining: ${fullText}`);
+    $("guideTimer").classList.toggle("timer-low", timer.classList.contains("timer-low"));
   };
-  if (S.gameResult) { setTimerText("Game over"); return; }
+  if (S.gameResult) { timer.classList.remove("timer-low"); setTimerText("Game over"); return; }
   const minutes = timerMinutes();
   const remaining = S.roundDeadline ? Math.max(0, Math.ceil((S.roundDeadline - Date.now()) / 1000)) : minutes * 60;
   const countdown = `${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}`;
-  setTimerText(minutes ? countdown : "No timer", minutes && !S.drawn ? "Starts when the monster is drawn" : "");
   timer.classList.toggle("timer-low", !!minutes && !!S.drawn && remaining <= 30);
+  setTimerText(minutes ? countdown : "No timer", minutes && !S.drawn ? "Starts when the monster is drawn" : "");
   if (timeExpired()) {
     const key = `${S.gameId}:${S.round}`;
     if (expiringRound !== key) {
@@ -333,6 +337,7 @@ function showUnavailable(err) {
 }
 
 function afterChange() {
+  syncPersonalEliminations();
   updateTimer();
   if (timeExpired()) { render(); return; }
   // If the round ended before the drawer's name made it into the reveal, fill it in from the drawer's device.
@@ -664,6 +669,18 @@ function actingAsker() { const a = currentAsker(); return a && controls(a) ? a :
 
 // ---------- field guide ----------
 let guideOpen = false, guideMode = "browse", guideView = null, lastGuideHtml = null, lastGuideView = undefined, indexScroll = 0;
+// Personal notes never enter the shared room document.
+let eliminationRound = null;
+const personalEliminations = new Set();
+function syncPersonalEliminations() {
+  const key = S ? JSON.stringify([session?.code, me, S.gameId, S.round, S.monsterId]) : null;
+  if (key !== eliminationRound) { personalEliminations.clear(); eliminationRound = key; }
+}
+const canRuleOut = () => !!(S && !S.gameResult && players()[me] && !iAmMonster());
+function ruleOutButton(name) {
+  const marked = personalEliminations.has(name);
+  return `<button class="ghost rule-out" data-g="rule-out" data-name="${esc(name)}" aria-pressed="${marked}" aria-label="${esc((marked ? "Restore " : "Rule out ") + name + " in your view")}">${marked ? "Undo rule out" : "Rule out"}</button>`;
+}
 function guideList() { return [...monsters].sort((a, b) => norm(a).localeCompare(norm(b))); }
 function ruledOut() { return S ? (S.clues || []).filter(c => c.ans === "wrong" && c.guess).map(c => c.guess) : []; }
 function guideCanAct(mode = guideMode) {
@@ -696,12 +713,15 @@ function openGuide(mode = "browse") {
   if (!guideOpen) playPageTurn();
   guideMode = mode; guideView = null; guideOpen = true; lastGuideHtml = null; lastGuideView = undefined; indexScroll = 0;
   $("guide").classList.remove("hidden");
+  $("guideTimer").classList.toggle("hidden", !S);
+  updateTimer();
   renderGuide();
   $("guideClose").focus();
 }
 function closeGuide() { guideOpen = false; $("guide").classList.add("hidden"); }
 function renderGuide() {
   if (!guideOpen) return;
+  syncPersonalEliminations();
   if (guideMode !== "browse" && !guideCanAct()) guideMode = "browse";
   const list = guideList(), out = ruledOut(), act = guideMode !== "browse";
   const asker = S ? currentAsker() : null;
@@ -726,9 +746,11 @@ function renderGuide() {
       <div class="leaf art ${inf.poster ? "poster" : ""}" aria-hidden="true">${art}</div>
       <div class="leaf text">
         <p class="pnum">Page ${i + 1} of ${list.length}</p>
-        <h3>${esc(m)}</h3>
+        <h3 class="${personalEliminations.has(m) ? "personally-out" : ""}">${esc(m)}</h3>
         <p class="entry">${esc(inf.desc)}</p>
         ${isOut ? `<p class="ruled">✗ Already guessed wrong this round</p>` : ""}
+        ${personalEliminations.has(m) ? `<p class="ruled">✗ Ruled out by you</p>` : ""}
+        ${canRuleOut() && !isOut ? ruleOutButton(m) : ""}
         ${act && !isOut ? `<button class="primary" data-g="pick" data-name="${esc(m)}">${guideMode === "guess" ? "Guess this monster" : "This is the one"}</button>` : ""}
         ${statsHtml(m)}
         <div class="row nav">
@@ -738,9 +760,10 @@ function renderGuide() {
         </div>
       </div></div>`;
   } else {
-    html = `<p class="intro">${list.length} monsters. ${act ? "Open a monster's page to choose it." : "Tap one to read its page."}</p>
+    html = `<p class="intro">${list.length} monsters. ${act ? "Open a monster's page to choose it." : "Tap one to read its page."}${canRuleOut() ? " Rule out monsters in your view only; your marks reset next round." : ""}</p>
       <div class="gindex">${list.map(m => { const isOut = out.includes(m);
-        return `<button class="gentry ${isOut ? "out" : ""}" data-g="go" data-name="${esc(m)}"><span class="gpic" aria-hidden="true">${artHtml(m)}</span><span class="gname">${esc(m)}</span>${isOut ? '<span class="gx">Wrong</span>' : ""}</button>`; }).join("")}</div>`;
+        const marked = personalEliminations.has(m);
+        return `<div class="gentry-wrap"><button class="gentry ${isOut || marked ? "out" : ""}" data-g="go" data-name="${esc(m)}"><span class="gpic" aria-hidden="true">${artHtml(m)}</span><span class="gname">${esc(m)}</span>${isOut ? '<span class="gx">Wrong</span>' : marked ? '<span class="gx">Ruled out by you</span>' : ""}</button>${canRuleOut() && !isOut ? ruleOutButton(m) : ""}</div>`; }).join("")}</div>`;
   }
   if (html === lastGuideHtml) return;
   const page = $("guidePage"), viewChanged = guideView !== lastGuideView, keep = page.scrollTop;
@@ -755,6 +778,15 @@ document.addEventListener("keydown", e => { if (e.key === "Escape" && guideOpen 
 $("guidePage").addEventListener("click", async e => {
   const b = e.target.closest("button[data-g]"); if (!b) return;
   const g = b.dataset.g;
+  if (g === "rule-out") {
+    syncPersonalEliminations();
+    const name = b.dataset.name;
+    if (!canRuleOut() || !monsters.includes(name) || ruledOut().includes(name)) return;
+    if (personalEliminations.has(name)) personalEliminations.delete(name); else personalEliminations.add(name);
+    renderGuide();
+    [...$("guidePage").querySelectorAll('[data-g="rule-out"]')].find(button => button.dataset.name === name)?.focus({ preventScroll: true });
+    return;
+  }
   if (g === "go") { if (!guideView) indexScroll = $("guidePage").scrollTop; guideView = b.dataset.name; renderGuide(); return; }
   if (g === "index") { guideView = null; renderGuide(); return; }
   if (g === "pick") {
