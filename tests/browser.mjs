@@ -387,7 +387,7 @@ try {
   const timedPath = `rooms/${timedCode}`, timedState = () => docs.get(timedPath);
   assert.equal(timedState().difficulty, 'normal');
   await click(other, '#roomSetupBtn');
-  for (const [mode, minutes] of [['easy', 15], ['normal', 10], ['hard', 5], ['extreme', 3], ['casual', 0]]) {
+  for (const [mode, minutes] of [['easy', 10], ['normal', 7], ['hard', 5], ['extreme', 2], ['casual', 0]]) {
     await other.selectOption('#difficulty', mode);
     await wait(() => timedState().difficulty === mode);
     await wait(async () => (await other.locator('#roundTimer').textContent()).includes(minutes ? `${minutes}:00` : 'No timer'));
@@ -410,15 +410,15 @@ try {
   await watcher.locator('#game:not(.hidden)').waitFor();
   const started = Date.now();
   await click(other, '[data-act=draw]'); await wait(() => timedState().drawn);
-  assert.ok(timedState().roundDeadline >= started + 180000);
-  assert.ok(timedState().roundDeadline < Date.now() + 181000);
-  await wait(async () => (await watcher.locator('#roundTimer').textContent()).includes('3:00'));
+  assert.ok(timedState().roundDeadline >= started + 120000);
+  assert.ok(timedState().roundDeadline < Date.now() + 121000);
+  await wait(async () => (await watcher.locator('#roundTimer').textContent()).includes('2:00'));
   const deadline = timedState().roundDeadline;
   await watcher.reload(); await click(watcher, '#inviteJoin button[type=submit]');
   assert.equal(timedState().roundDeadline, deadline);
   passed('shared Extreme deadline starts on draw and survives a player refresh');
   await click(watcher, '#guideBtn');
-  // Move the shared deadline forward for a real countdown without a three-minute test wait.
+  // Move the shared deadline forward for a real countdown without a two-minute test wait.
   docs.set(timedPath, { ...timedState(), roundDeadline: Date.now() + 2500 });
   await wait(async () => (await other.locator('#roundTimer').textContent()).includes('0:02'));
   await wait(async () => (await watcher.locator('#roundTimer').textContent()).includes('0:02'));

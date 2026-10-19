@@ -35,7 +35,7 @@ let seenLast, revealOpen = false, showGallery = false;
 let turnMode = "choose", turnModeFor = null, lastTurnHtml = null, focusTurn = false;
 const resolvedGuesses = new Set();
 const DEFAULT_Q = 15;
-const DIFFICULTIES = { casual: ["Casual", 0], easy: ["Easy", 15], normal: ["Normal", 10], hard: ["Hard", 5], extreme: ["Extreme", 3] };
+const DIFFICULTIES = { casual: ["Casual", 0], easy: ["Easy", 10], normal: ["Normal", 7], hard: ["Hard", 5], extreme: ["Extreme", 2] };
 const difficulty = () => S?.difficulty || "normal";
 const timerMinutes = () => DIFFICULTIES[difficulty()][1];
 const timeExpired = () => !!(S?.drawn && S.roundDeadline && Date.now() >= S.roundDeadline);
